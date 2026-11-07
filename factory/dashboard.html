@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Software Factory</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #fff; --line: #e3e2de; --text: #1f1f1d; --muted: #6d6c67;
+    --pass: #1a7f4e; --pass-bg: #e3f4ea; --changes: #9a5b00; --changes-bg: #fbeed5;
+    --pending: #6d6c67; --pending-bg: #eeedea; --alert: #b3261e; --alert-bg: #fdecea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --panel: #1f1f1d; --line: #33322f; --text: #ecece8; --muted: #9c9b95;
+      --pass: #5fd39a; --pass-bg: #17352a; --changes: #f0b95e; --changes-bg: #3a2c12;
+      --pending: #9c9b95; --pending-bg: #2a2a27; --alert: #ff8f86; --alert-bg: #3f1d1a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 20px 24px 8px; }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  #status { color: var(--muted); font-size: 12px; }
+  #alert {
+    display: none; margin: 8px 24px 0; padding: 10px 14px; border-radius: 8px;
+    background: var(--alert-bg); color: var(--alert); font-weight: 500;
+  }
+  main {
+    display: grid; grid-template-columns: repeat(7, minmax(170px, 1fr));
+    gap: 10px; padding: 16px 24px 32px; overflow-x: auto;
+  }
+  .col { min-width: 0; }
+  .col h2 {
+    display: flex; justify-content: space-between; margin: 0 0 8px; font-size: 12px;
+    font-weight: 600; color: var(--muted);
+  }
+  .col.human h2 { color: var(--alert); }
+  .card {
+    display: block; width: 100%; text-align: left; color: inherit; font: inherit; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px; margin-bottom: 8px;
+  }
+  .card:hover, .card:focus-visible { border-color: var(--muted); outline: none; }
+  .card.human { border: 2px solid var(--alert); }
+  .id { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+  .title { font-weight: 550; margin: 2px 0 6px; overflow-wrap: anywhere; }
+  .round { display: flex; align-items: center; gap: 3px; margin-top: 4px; flex-wrap: wrap; }
+  .round b { font-size: 11px; font-weight: 500; color: var(--muted); width: 20px; }
+  .chip { font-size: 11px; padding: 1px 6px; border-radius: 999px; white-space: nowrap; }
+  .PASS { background: var(--pass-bg); color: var(--pass); }
+  .CHANGES { background: var(--changes-bg); color: var(--changes); }
+  .pending { background: var(--pending-bg); color: var(--pending); }
+  .FAIL, .TRIPWIRE { background: var(--alert-bg); color: var(--alert); }
+  .meta { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .reason { margin-top: 6px; font-size: 12px; color: var(--alert); }
+  .empty { color: var(--muted); font-size: 12px; padding: 4px 0; }
+  #drawer {
+    position: fixed; inset: 0 0 0 auto; width: min(680px, 100vw); display: none; flex-direction: column;
+    background: var(--panel); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgb(0 0 0 / .12);
+  }
+  #drawer.open { display: flex; }
+  #drawer header { padding: 16px 20px 8px; justify-content: space-between; align-items: center; }
+  #drawer h3 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+  #close { background: none; border: 0; color: var(--muted); font-size: 20px; cursor: pointer; }
+  #tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 20px 10px; border-bottom: 1px solid var(--line); }
+  #tabs button {
+    font: inherit; font-size: 12px; padding: 3px 8px; cursor: pointer; color: var(--text);
+    background: none; border: 1px solid var(--line); border-radius: 6px;
+  }
+  #tabs button[aria-pressed="true"] { background: var(--text); color: var(--panel); border-color: var(--text); }
+  #doc { padding: 16px 20px 32px; overflow-y: auto; flex: 1; overflow-wrap: anywhere; }
+  #doc h1, #doc h2, #doc h3 { font-size: 15px; margin: 18px 0 6px; }
+  #doc h1 { font-size: 17px; }
+  #doc pre { background: var(--bg); padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+  #doc code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  @media (max-width: 700px) {
+    header { padding: 16px 16px 8px; }
+    #alert { margin: 8px 16px 0; }
+    main { grid-template-columns: 1fr; padding: 16px; }
+    .col:not(.has-jobs) { display: none; }
+  }
+</style>
+</head>
+<body>
+<header><h1>Software Factory</h1><span id="status">Loading…</span></header>
+<div id="alert" role="status"></div>
+<main id="board"></main>
+<aside id="drawer" aria-label="Job files">
+  <header><h3 id="drawer-title"></h3><button id="close" aria-label="Close">×</button></header>
+  <nav id="tabs"></nav>
+  <article id="doc"></article>
+</aside>
+
+<script>
+const STAGES = [
+  ['spec', 'Spec'], ['build', 'Build'], ['review', 'Review'], ['gate', 'Gate'],
+  ['approval', 'Approval'], ['needs-human', 'Needs you'], ['merged', 'Merged'],
+];
+const REVIEWERS = ['security', 'risk', 'quant', 'code'];
+const MARK = { PASS: '✓', CHANGES: '!', pending: '·' };
+
+let jobs = [];
+let openJob = null;
+let openFile = null;
+let lastBoard = '';
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+function chip(label, value) {
+  const v = ['PASS', 'CHANGES', 'FAIL', 'TRIPWIRE'].includes(value) ? value : 'pending';
+  return `<span class="chip ${v}" title="${esc(label)}: ${esc(v)}">${MARK[v] ?? '×'} ${esc(label)}</span>`;
+}
+
+function card(job) {
+  const human = job.stage === 'needs-human';
+  const rounds = (job.rounds ?? []).map((r, i) =>
+    `<div class="round"><b>R${i + 1}</b>${REVIEWERS.map((n) => chip(n, r.reviews?.[n])).join('')}</div>`).join('');
+  const gate = job.gate && job.gate !== 'pending'
+    ? `<div class="round"><b></b>${chip('gate', job.gate)}</div>` : '';
+  return `<button class="card ${human ? 'human' : ''}" data-id="${esc(job.id)}">
+    <div class="id">${esc(job.id)}</div>
+    <div class="title">${esc(job.title)}</div>
+    ${rounds}${gate}
+    ${job.stage === 'review' || job.stage === 'build' ? `<div class="meta">Round ${esc(job.round || 1)} of ${esc(job.maxRounds ?? 2)}</div>` : ''}
+    ${human && job.reason ? `<div class="reason">${esc(job.reason)}</div>` : ''}
+  </button>`;
+}
+
+function render() {
+  document.getElementById('board').innerHTML = STAGES.map(([key, label]) => {
+    const here = jobs.filter((j) => j.stage === key);
+    return `<section class="col ${key === 'needs-human' ? 'human' : ''} ${here.length ? 'has-jobs' : ''}">
+      <h2><span>${label}</span><span>${here.length || ''}</span></h2>
+      ${here.map(card).join('')}
+    </section>`;
+  }).join('');
+  const waiting = jobs.filter((j) => j.stage === 'needs-human');
+  const alert = document.getElementById('alert');
+  alert.style.display = waiting.length ? 'block' : 'none';
+  alert.textContent = waiting.length === 1
+    ? `1 job needs you: /factory approve ${waiting[0].id}, or /factory rework ${waiting[0].id} <note>`
+    : `${waiting.length} jobs need you`;
+  if (!jobs.length) {
+    alert.style.display = 'block';
+    alert.style.background = 'var(--pending-bg)';
+    alert.style.color = 'var(--muted)';
+    alert.textContent = 'No jobs yet. Run /factory next to start the backlog.';
+  } else {
+    alert.style.background = '';
+    alert.style.color = '';
+  }
+}
+
+async function poll() {
+  const status = document.getElementById('status');
+  try {
+    const res = await fetch('board.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    const text = await res.text();
+    if (text !== lastBoard) {
+      lastBoard = text;
+      jobs = JSON.parse(text).jobs ?? [];
+      render();
+      if (openJob) drawTabs();
+    }
+    status.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+  } catch (e) {
+    status.textContent = 'Cannot read board.json. Serve this folder: python3 -m http.server 8787 --bind 127.0.0.1';
+  }
+}
+
+function filesFor(job) {
+  const files = [['Spec', 'spec.md'], ['Build', 'build.md']];
+  (job.rounds ?? []).forEach((r, i) => {
+    const n = i + 1;
+    if (r.note) files.push([`R${n} note`, `round-${n}/human-note.md`]);
+    REVIEWERS.forEach((name) => files.push([`R${n} ${name}`, `round-${n}/review-${name}.md`]));
+  });
+  files.push(['Gate', 'gate.md'], ['Decision', 'decision.md']);
+  return files;
+}
+
+function drawTabs() {
+  const job = jobs.find((j) => j.id === openJob);
+  if (!job) return;
+  document.getElementById('tabs').innerHTML = filesFor(job).map(([label, path]) =>
+    `<button data-file="${esc(path)}" aria-pressed="${path === openFile}">${esc(label)}</button>`).join('');
+}
+
+function inline(s) {
+  return s.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+}
+
+// Small markdown subset. Input is escaped first, so job files cannot inject HTML.
+function markdown(src) {
+  const out = [];
+  let list = null;
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  const blocks = esc(src).split(/^```.*$/m);
+  blocks.forEach((block, i) => {
+    if (i % 2) { closeList(); out.push(`<pre><code>${block.replace(/^\n/, '')}</code></pre>`); return; }
+    for (const line of block.split('\n')) {
+      const h = line.match(/^(#{1,3})\s+(.*)/);
+      const ul = line.match(/^\s*[-*]\s+(.*)/);
+      const ol = line.match(/^\s*\d+\.\s+(.*)/);
+      if (ul || ol) {
+        const tag = ul ? 'ul' : 'ol';
+        if (list !== tag) { closeList(); out.push(`<${tag}>`); list = tag; }
+        out.push(`<li>${inline((ul ?? ol)[1])}</li>`);
+        continue;
+      }
+      closeList();
+      if (h) out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`);
+      else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+    }
+  });
+  closeList();
+  return out.join('\n');
+}
+
+async function showFile(path) {
+  openFile = path;
+  drawTabs();
+  const doc = document.getElementById('doc');
+  try {
+    const url = `jobs/${encodeURIComponent(openJob)}/${path.split('/').map(encodeURIComponent).join('/')}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (openFile !== path) return;
+    doc.innerHTML = res.ok ? markdown(await res.text()) : '<p class="empty">Not written yet.</p>';
+  } catch (e) {
+    doc.innerHTML = '<p class="empty">Could not load this file.</p>';
+  }
+}
+
+document.getElementById('board').addEventListener('click', (e) => {
+  const el = e.target.closest('.card');
+  if (!el) return;
+  const job = jobs.find((j) => j.id === el.dataset.id);
+  if (!job) return;
+  openJob = job.id;
+  document.getElementById('drawer-title').textContent = `${job.id}: ${job.title ?? ''}`;
+  document.getElementById('drawer').classList.add('open');
+  showFile('spec.md');
+});
+document.getElementById('tabs').addEventListener('click', (e) => {
+  const file = e.target.closest('button')?.dataset.file;
+  if (file) showFile(file);
+});
+function closeDrawer() {
+  openJob = null;
+  document.getElementById('drawer').classList.remove('open');
+}
+document.getElementById('close').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+
+poll();
+setInterval(poll, 2000);
+</script>
+</body>
+</html>

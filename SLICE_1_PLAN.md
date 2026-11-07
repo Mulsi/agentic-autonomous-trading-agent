@@ -58,7 +58,7 @@ Defaults chosen so work can start; items marked **(confirm)** are listed again i
 
 **D1 — Repo root.** This folder is the repo root (no nested `crypto-trading-agent/` directory). `git init` happens in S0. The master plan's repository layout is followed, but only the modules slice 1 needs are created.
 
-**D2 — Stack.** TypeScript on **Node 22 LTS**, `pnpm`, `tsc` in `strict` mode. **NestJS** as the application framework: each module in §4 is a Nest module, and dependency injection selects the `ExchangeAdapter` implementation (D10).
+**D2 — Stack.** TypeScript on **Node 26**, `pnpm`, `tsc` in `strict` mode. **NestJS** as the application framework: each module in §4 is a Nest module, and dependency injection selects the `ExchangeAdapter` implementation (D10).
 - Validation and config: **zod** (env settings, `RISK_POLICY.yaml`, external payloads, Claude tool and output schemas)
 - HTTP and streams: built-in `fetch` (undici), `ws`
 - Database: **PostgreSQL 16** in Docker, **Drizzle ORM** + drizzle-kit migrations, `pg` driver
@@ -173,7 +173,7 @@ research/          Python (uv): notebooks/, reports/ (offline only, see D13)
 Each milestone is one or more Claude Code sessions. Following master §24, each session reads `progress.md` and `tests.json` first, writes tests first where practical, never deletes tests to go green, and stops if a prerequisite is missing.
 
 ### S0 — Foundation
-- `git init`, `package.json` (pnpm, Node 22 pinned via `.nvmrc` + `engines`), `tsconfig.json` (`strict`, `noUncheckedIndexedAccess`), NestJS skeleton, vitest, typescript-eslint + Prettier, `Makefile`, `.gitignore`, `.env.example` (only `ANTHROPIC_API_KEY`, `DATABASE_URL`, `TRADER_MODE=paper`)
+- `git init`, `package.json` (pnpm, Node 26 pinned via `.nvmrc` + `engines`), `tsconfig.json` (`strict`, `noUncheckedIndexedAccess`), NestJS skeleton, vitest, typescript-eslint + Prettier, `Makefile`, `.gitignore`, `.env.example` (only `ANTHROPIC_API_KEY`, `DATABASE_URL`, `TRADER_MODE=paper`)
 - `docker-compose.yml` with Postgres 16; Drizzle + drizzle-kit wired with an empty first migration
 - `research/` with its own `pyproject.toml` (uv); it isn't part of the TypeScript build or test run
 - Typed settings (zod): `TRADER_MODE` accepts only `paper` in slice 1 (`live` isn't implemented, not just disabled). Secrets never logged.
