@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(claude-api)",
+      "mcp__scheduled-tasks__list_scheduled_tasks",
+      "Read(//Users/mihamulej/.claude/plugins/**)",
+      "mcp__plugin_apple-mail_apple-mail__get_mailbox_unread_counts",
+      "mcp__plugin_apple-mail_apple-mail__list_account_addresses",
+      "Bash(date -v-1d '+yesterday=%Y-%m-%d')",
+      "mcp__plugin_apple-mail_apple-mail__search_emails",
+      "mcp__plugin_apple-mail_apple-mail__list_mailboxes",
+      "mcp__plugin_apple-mail_apple-mail__read_email",
+      "Bash(date -v+5M '+%Y-%m-%dT%H:%M:00%z')"
+    ]
+  }
+}
