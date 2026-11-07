@@ -1,1 +1,27 @@
-{ "jobs": [] }
+{
+  "jobs": [
+    {
+      "id": "001-repo-foundation",
+      "title": "S0a Repo foundation",
+      "branch": "factory/001-repo-foundation",
+      "stage": "needs-human",
+      "round": 1,
+      "maxRounds": 2,
+      "rounds": [
+        {
+          "reviews": {
+            "security": "PASS",
+            "risk": "PASS",
+            "quant": "PASS",
+            "code": "PASS"
+          }
+        }
+      ],
+      "gate": "PASS",
+      "needsHuman": true,
+      "reason": "protected paths (.env.example, src/config/) and [human] criterion 37: confirm D1 and linter settlements, apply CLAUDE.md text",
+      "builder": "aa46ef784ee689b70",
+      "updatedAt": "2026-11-07T10:33:24Z"
+    }
+  ]
+}
