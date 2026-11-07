@@ -1,0 +1,64 @@
+{
+  "tests": [
+    {
+      "file": "local-trading-agent-backend/src/app.controller.spec.ts",
+      "milestone": "S0",
+      "covers": "AppModule boots a standalone context with zero controllers in every module",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/app.e2e-spec.ts",
+      "milestone": "S0",
+      "covers": "built app exits by itself, logs JSON lines only, refuses invalid settings, no secrets in output",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/app/no-telemetry.spec.ts",
+      "milestone": "S0",
+      "covers": "telemetry and HTTP packages removed from package.json, lockfile, source and README",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/app/standalone.spec.ts",
+      "milestone": "S0",
+      "covers": "main.ts uses a standalone context, no listener or controller in source",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/config/config.module.spec.ts",
+      "milestone": "S0",
+      "covers": "settings through DI, import needs no env, start scripts load ../.env",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/config/logging.spec.ts",
+      "milestone": "S0",
+      "covers": "pino dependencies, log line shape, secret redaction, no console calls",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/config/settings.spec.ts",
+      "milestone": "S0",
+      "covers": "paper-only settings, no values in errors",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/shared/correlation.spec.ts",
+      "milestone": "S0",
+      "covers": "correlation scopes across await, concurrency, generated UUIDs, no ID outside a scope",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/tooling/repo-files.spec.ts",
+      "milestone": "S0",
+      "covers": ".env.example, progress.md and tests.json at the repo root",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/tooling/toolchain.spec.ts",
+      "milestone": "S0",
+      "covers": "Node 26 pin, strict tsconfig, no oxlint, build runs typecheck",
+      "status": "passing"
+    }
+  ]
+}
