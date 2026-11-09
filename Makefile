@@ -18,10 +18,10 @@ test lint typecheck:
 
 # Starts Postgres, waits until it is healthy, then applies the committed
 # migrations. Safe to run again. Any failure stops the target non-zero (D11).
-# --env-file /dev/null keeps compose from reading a repo-root .env, and the
-# migration URL is set here, so neither step reads .env.
+# Nothing reads .env: --env-file /dev/null keeps compose from loading one, the
+# migration URL is set here, and db:migrate stops drizzle-kit from loading one.
 db-up:
-	@set -euo pipefail; \
+	@set -eo pipefail; \
 	export PATH="$$PATH:$(DOCKER_BIN)"; \
 	if ! command -v docker >/dev/null; then \
 	  echo "db-up: docker not found. Install Docker Desktop." >&2; exit 1; \
