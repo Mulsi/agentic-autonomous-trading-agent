@@ -27,7 +27,7 @@
       "id": "002-database",
       "title": "S0b Database",
       "branch": "factory/002-database",
-      "stage": "needs-human",
+      "stage": "merged",
       "round": 1,
       "maxRounds": 2,
       "rounds": [
@@ -42,9 +42,9 @@
       ],
       "gate": "PASS",
       "needsHuman": true,
-      "reason": "protected paths (.env.example, src/db/migrations/) and [human] criterion 34: read migration and drizzle.config.ts, accept local credentials, apply CLAUDE.md text",
+      "reason": "human approved: protected paths (.env.example, src/db/migrations/) and criterion 34",
       "builder": "a442b919ce5621c67",
-      "updatedAt": "2026-11-09T16:52:42Z"
+      "updatedAt": "2026-11-09T16:55:58Z"
     }
   ]
 }
