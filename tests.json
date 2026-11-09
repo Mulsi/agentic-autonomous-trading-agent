@@ -39,7 +39,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/config/app-logger.spec.ts",
       "milestone": "S0",
-      "covers": "AppModule builds its logger from the settings parsed at boot, and its root logger scrubs secret values from every line, buffered boot lines included",
+      "covers": "AppModule parses the settings once at boot and builds its logger from them, and its root logger scrubs secret values from every line, buffered boot lines included",
       "status": "passing"
     },
     {

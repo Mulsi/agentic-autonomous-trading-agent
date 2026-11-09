@@ -9,13 +9,19 @@ import {
 import { symbols, type LoggerOptions } from 'pino';
 import { AppModule } from '../../../src/app.module.js';
 import { SETTINGS } from '../../../src/config/config.module.js';
-import type { Settings } from '../../../src/config/settings.js';
+import { parseSettings, type Settings } from '../../../src/config/settings.js';
 import {
   FIXTURE_DATABASE_URL,
   FIXTURE_DB_PASSWORD,
   stubFixtureEnv,
 } from '../../fixtures/env.js';
 import { captureStream, expectClean, REDACTED } from '../../fixtures/logs.js';
+
+// The real parseSettings, wrapped so the test can count boot-time parses.
+vi.mock(import('../../../src/config/settings.js'), async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, parseSettings: vi.fn(actual.parseSettings) };
+});
 
 // The unit counterpart of the e2e wiring proof, so `pnpm test` (and the gate)
 // catches an AppModule that builds its logger without the loaded secrets.
@@ -51,6 +57,10 @@ describe('the AppModule logger', () => {
   afterAll(async () => {
     await app.close();
     vi.unstubAllEnvs();
+  });
+
+  it('parses the settings once, at boot', () => {
+    expect(vi.mocked(parseSettings)).toHaveBeenCalledTimes(1);
   });
 
   it('is built from the settings parsed at boot', () => {
