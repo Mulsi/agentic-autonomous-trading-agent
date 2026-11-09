@@ -14,9 +14,10 @@ The app lives in `local-trading-agent-backend/`. Run `. factory/env.sh` first, b
 ```sh
 pnpm install --frozen-lockfile
 pnpm test        # vitest
-pnpm lint        # oxlint --type-aware
-pnpm build       # nest build
-pnpm test:e2e
+pnpm lint        # eslint, type-aware
+pnpm typecheck   # tsc --noEmit over src/, test/ and spec files
+pnpm build       # typecheck, then nest build
+pnpm test:e2e    # run pnpm build first
 ```
 
 Stack: TypeScript strict, Node 26, pnpm, NestJS, zod, Drizzle + Postgres 16, decimal.js, vitest + fast-check. ESM: relative imports end in `.js`. Python exists only in `research/`, offline (D13).
@@ -46,8 +47,8 @@ Development runs through the software factory: see `.claude/skills/factory/SKILL
 
 ## Known gaps between plan and repo
 
-Resolved by the S0 backlog items, not silently:
+Settled by S0a. `progress.md` has the detail.
 
-- D1 says this folder is the app root; the app is actually in `local-trading-agent-backend/`.
-- D2 says typescript-eslint; the scaffold uses oxlint. There is no `typecheck` script yet; `pnpm build` covers it for now.
-- D2 says standalone context with no HTTP. The scaffold still has an HTTP listener, `AppController`, and `@nestjs/observe`, an external telemetry SDK.
+- D1: the app stays in `local-trading-agent-backend/`, which departs from the letter of D1. Top-level files other than app packaging live at the repo root. `prompts/` and `scripts/` stay in the app folder, because the protected `/prompts/` pattern matches only there.
+- D2, linter: typescript-eslint replaced oxlint. `pnpm typecheck` runs `tsc --noEmit`, and `pnpm build` runs it first.
+- D2, standalone context: the HTTP listener, `AppController` and `@nestjs/observe` are gone. The app boots a standalone Nest application context.
