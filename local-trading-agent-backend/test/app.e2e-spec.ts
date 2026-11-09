@@ -4,9 +4,12 @@ import { createServer, type AddressInfo, type Server } from 'node:net';
 import { join } from 'node:path';
 import {
   FIXTURE_API_KEY,
+  FIXTURE_DATABASE_URL,
   FIXTURE_DB_PASSWORD,
   fixtureEnv,
+  UNPARSEABLE_DATABASE_URLS,
 } from './fixtures/env.js';
+import { expectClean, REDACTED } from './fixtures/logs.js';
 import { appRoot } from './fixtures/repo.js';
 
 const EXIT_LIMIT_MS = 10_000;
@@ -23,8 +26,16 @@ interface RunResult {
 
 /** Spawns the built app. The env is explicit, so nothing real can leak in. */
 function runMain(env: Record<string, string>): Promise<RunResult> {
+  return runNode(['dist/main.js'], env);
+}
+
+/** Runs node in the app folder with an explicit env. */
+function runNode(
+  args: string[],
+  env: Record<string, string>,
+): Promise<RunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['dist/main.js'], {
+    const child = spawn(process.execPath, args, {
       cwd: appRoot,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -113,6 +124,34 @@ describe('node dist/main.js with valid env', () => {
   });
 });
 
+describe('node dist/main.js and ANTHROPIC_API_KEY (D9)', () => {
+  let result: RunResult;
+
+  beforeAll(async () => {
+    result = await runMain({
+      ...fixtureEnv,
+      ANTHROPIC_API_KEY: FIXTURE_API_KEY,
+    });
+  }, EXIT_LIMIT_MS + 5_000);
+
+  it('the valid env holds only DATABASE_URL and TRADER_MODE', () => {
+    expect(Object.keys(fixtureEnv).sort()).toEqual([
+      'DATABASE_URL',
+      'TRADER_MODE',
+    ]);
+  });
+
+  it('exits 0 by itself when the environment holds a key', () => {
+    expect(result.timedOut).toBe(false);
+    expect(result.code).toBe(0);
+  });
+
+  it('writes the key to neither stdout nor stderr', () => {
+    expect(result.stdout).not.toContain(FIXTURE_API_KEY);
+    expect(result.stderr).not.toContain(FIXTURE_API_KEY);
+  });
+});
+
 describe('node dist/main.js and the database', () => {
   // A plain TCP listener stands in for Postgres and counts connections. The
   // app has no database client until after S0c, so it must never dial out.
@@ -166,13 +205,118 @@ describe('node dist/main.js with invalid env', () => {
   it(
     'refuses to start when TRADER_MODE is unset',
     async () => {
-      const { ANTHROPIC_API_KEY, DATABASE_URL } = fixtureEnv;
+      const { DATABASE_URL } = fixtureEnv;
 
-      const result = await runMain({ ANTHROPIC_API_KEY, DATABASE_URL });
+      const result = await runMain({ DATABASE_URL });
 
       expect(result.code).not.toBe(0);
       expect(result.code).not.toBeNull();
     },
     EXIT_LIMIT_MS + 5_000,
   );
+});
+
+describe('node dist/main.js with an unparseable DATABASE_URL', () => {
+  it.each(UNPARSEABLE_DATABASE_URLS)(
+    'refuses %s without leaking the password',
+    async (_, url) => {
+      expect(() => new URL(url)).toThrow();
+
+      const result = await runMain({ ...fixtureEnv, DATABASE_URL: url });
+
+      expect(result.timedOut).toBe(false);
+      expect(result.code).not.toBe(0);
+      expect(result.code).not.toBeNull();
+      expect(result.stderr).toContain('DATABASE_URL');
+      expect(result.stdout).not.toContain(FIXTURE_DB_PASSWORD);
+      expect(result.stderr).not.toContain(FIXTURE_DB_PASSWORD);
+    },
+    EXIT_LIMIT_MS + 5_000,
+  );
+});
+
+describe('the built AppModule scrubs secret values from its logs', () => {
+  // Boots dist/app.module.js as main.ts does, then logs one leaking shape from
+  // each value-scrub case through the context's Logger. No test-only switch is
+  // needed in production code.
+  const PROBE = `
+    const { NestFactory } = await import('@nestjs/core');
+    const { Logger } = await import('nestjs-pino');
+    const { AppModule } = await import('./dist/app.module.js');
+    const { SETTINGS } = await import('./dist/config/config.module.js');
+
+    const app = await NestFactory.createApplicationContext(AppModule, {
+      abortOnError: false,
+      bufferLogs: true,
+    });
+    const logger = app.get(Logger);
+    app.useLogger(logger);
+
+    const settings = app.get(SETTINGS);
+    const url = settings.DATABASE_URL;
+    const password = new URL(url).password;
+
+    logger.log({ msg: 'probe nested', a: { b: { c: settings } } }, 'Probe');
+    logger.log({ msg: 'probe renamed', dsn: url, password }, 'Probe');
+    logger.log('probe interpolated ' + url, 'Probe');
+    logger.error(
+      new Error('probe error ' + url, { cause: new Error('cause ' + password) }),
+      'Probe',
+    );
+
+    await app.close();
+  `;
+  let result: RunResult;
+  let lines: Record<string, unknown>[];
+
+  beforeAll(async () => {
+    result = await runNode(['--input-type=module', '--eval', PROBE], {
+      ...fixtureEnv,
+    });
+    // Lines that are not JSON fail the clean check below, not every test.
+    lines = stdoutLines(result).flatMap((raw) => {
+      try {
+        return [JSON.parse(raw) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    });
+  }, EXIT_LIMIT_MS + 5_000);
+
+  it('exits 0 with nothing on stderr', () => {
+    expect(result.timedOut).toBe(false);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+  });
+
+  it('writes only clean JSON lines to stdout', () => {
+    expectClean(stdoutLines(result), [
+      FIXTURE_DB_PASSWORD,
+      FIXTURE_DATABASE_URL,
+    ]);
+  });
+
+  it("passes Nest's buffered boot lines through the same logger", () => {
+    const contexts = lines.map((line) => line.context);
+
+    expect(contexts).toContain('InstanceLoader');
+  });
+
+  it('writes [REDACTED] where each secret was', () => {
+    const probe = (msg: string) =>
+      lines.find((line) => line.context === 'Probe' && line.msg === msg);
+
+    expect(probe('probe nested')).toMatchObject({
+      a: { b: { c: { DATABASE_URL: REDACTED, TRADER_MODE: 'paper' } } },
+    });
+    expect(probe('probe renamed')).toMatchObject({
+      dsn: REDACTED,
+      password: REDACTED,
+    });
+    expect(probe(`probe interpolated ${REDACTED}`)).toBeDefined();
+    // pino's error serializer appends the cause's message to the error's.
+    expect(probe(`probe error ${REDACTED}`)).toMatchObject({
+      err: { message: `probe error ${REDACTED}: cause ${REDACTED}` },
+    });
+  });
 });

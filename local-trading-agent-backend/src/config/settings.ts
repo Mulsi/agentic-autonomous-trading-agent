@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
+// The app holds no Anthropic credential (D9). Any variable not named here,
+// including an Anthropic key in the parent environment, is dropped unread.
 export const settingsSchema = z.object({
-  // Opaque on purpose: the key's format belongs to Anthropic, so only blank fails.
-  ANTHROPIC_API_KEY: z.string().refine((key) => key.trim().length > 0),
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/, hostname: /./ }),
   TRADER_MODE: z.literal('paper'),
 });

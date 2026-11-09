@@ -1,9 +1,29 @@
+import { inspect } from 'node:util';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../../src/app.module.js';
 import { SETTINGS } from '../../../src/config/config.module.js';
 import type { Settings } from '../../../src/config/settings.js';
-import { fixtureEnv, stubFixtureEnv } from '../../fixtures/env.js';
+import {
+  FIXTURE_API_KEY,
+  FIXTURE_DB_PASSWORD,
+  fixtureEnv,
+  stubFixtureEnv,
+  UNPARSEABLE_DATABASE_URLS,
+} from '../../fixtures/env.js';
 import { readPackageJson } from '../../fixtures/repo.js';
+
+async function settingsFromDi(): Promise<Settings> {
+  const context = await NestFactory.createApplicationContext(AppModule, {
+    abortOnError: false,
+    logger: false,
+  });
+
+  try {
+    return context.get<Settings>(SETTINGS);
+  } finally {
+    await context.close();
+  }
+}
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -11,7 +31,7 @@ afterEach(() => {
 
 describe('importing the app module', () => {
   it('does not throw with an empty environment', async () => {
-    for (const key of Object.keys(fixtureEnv)) {
+    for (const key of [...Object.keys(fixtureEnv), 'ANTHROPIC_API_KEY']) {
       vi.stubEnv(key, undefined);
     }
     vi.resetModules();
@@ -38,6 +58,45 @@ describe('ConfigModule', () => {
       await context.close();
     }
   });
+
+  it('boots with only DATABASE_URL and TRADER_MODE set', async () => {
+    stubFixtureEnv();
+
+    expect(process.env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(await settingsFromDi()).toEqual(fixtureEnv);
+  });
+
+  it('ignores ANTHROPIC_API_KEY in the environment (D9)', async () => {
+    stubFixtureEnv();
+    vi.stubEnv('ANTHROPIC_API_KEY', FIXTURE_API_KEY);
+
+    const settings = await settingsFromDi();
+
+    expect(settings).toEqual(fixtureEnv);
+    expect(JSON.stringify(settings)).not.toContain(FIXTURE_API_KEY);
+  });
+
+  it.each(UNPARSEABLE_DATABASE_URLS)(
+    'refuses to boot on %s in DATABASE_URL without leaking it',
+    async (_, url) => {
+      stubFixtureEnv();
+      vi.stubEnv('DATABASE_URL', url);
+
+      const error: unknown = await NestFactory.createApplicationContext(
+        AppModule,
+        { abortOnError: false, logger: false },
+      ).then(
+        () => undefined,
+        (rejection: unknown) => rejection,
+      );
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain('DATABASE_URL');
+      expect(inspect(error, { showHidden: true, depth: null })).not.toContain(
+        FIXTURE_DB_PASSWORD,
+      );
+    },
+  );
 
   it('refuses to boot on invalid settings', async () => {
     stubFixtureEnv();

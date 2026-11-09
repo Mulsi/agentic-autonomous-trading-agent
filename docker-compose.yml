@@ -2,7 +2,7 @@
 # applies the migrations. No other services: no Redis in slice 1.
 #
 # The credentials are fixed local-development values, published on loopback
-# only. They are not a secret: the only secret is ANTHROPIC_API_KEY.
+# only. They are not a secret; logs still scrub any DATABASE_URL password.
 # `.env.example` and the Makefile carry the same URL.
 #
 # No variable interpolation and no env_file, so a repo-root .env never reaches

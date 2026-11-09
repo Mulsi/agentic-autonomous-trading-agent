@@ -9,7 +9,7 @@
     {
       "file": "local-trading-agent-backend/test/app.e2e-spec.ts",
       "milestone": "S0",
-      "covers": "built app exits by itself, logs JSON lines only, refuses invalid settings, no secrets in output, no database connection at boot",
+      "covers": "built app exits by itself with only DATABASE_URL and TRADER_MODE, ignores ANTHROPIC_API_KEY (D9), logs JSON lines only, refuses invalid settings and unparseable DATABASE_URLs without leaking the password, the built AppModule scrubs secret values from every log line including buffered boot lines, no database connection at boot",
       "status": "passing"
     },
     {
@@ -39,19 +39,25 @@
     {
       "file": "local-trading-agent-backend/test/unit/config/config.module.spec.ts",
       "milestone": "S0",
-      "covers": "settings through DI, import needs no env, start scripts load ../.env",
+      "covers": "settings through DI with two keys, ANTHROPIC_API_KEY ignored (D9), unparseable DATABASE_URL refuses boot without the password, import needs no env, start scripts load ../.env",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/unit/config/logging.spec.ts",
       "milestone": "S0",
-      "covers": "pino dependencies, log line shape, secret redaction, no console calls",
+      "covers": "pino dependencies, log line shape, key-path redaction, value scrub of secrets nested deep, under other key names, in messages, errors, bindings and encoded forms, no change without a secret, nestjs-pino Logger scrubs too, no console calls",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/config/secrets.spec.ts",
+      "milestone": "S0",
+      "covers": "secret values from DATABASE_URL in raw, normalized, decoded and JSON-escaped forms, none without a password, unparseable URL throws without input, cause or password, scrubSecrets longest first and never the empty string, new URL and process.env each in one file",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/unit/config/settings.spec.ts",
       "milestone": "S0",
-      "covers": "paper-only settings, no values in errors",
+      "covers": "paper-only settings with exactly DATABASE_URL and TRADER_MODE, ANTHROPIC_API_KEY dropped unread (D9), no values in errors, unparseable DATABASE_URL errors carry no password",
       "status": "passing"
     },
     {
@@ -87,7 +93,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/shared/correlation.spec.ts",
       "milestone": "S0",
-      "covers": "correlation scopes across await, concurrency, generated UUIDs, no ID outside a scope",
+      "covers": "correlation scopes across await, concurrency, generated UUIDs, no ID outside a scope, on the loggerOptions factory",
       "status": "passing"
     },
     {
@@ -99,7 +105,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/tooling/repo-files.spec.ts",
       "milestone": "S0",
-      "covers": ".env.example, progress.md (S0b done, S0c next) and tests.json at the repo root",
+      "covers": ".env.example has two keys (D9), ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0c done, S0d next) and tests.json at the repo root",
       "status": "passing"
     },
     {

@@ -1,10 +1,13 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { pino } from 'pino';
-import { pinoOptions } from '../../../src/config/logging.js';
+import { loggerOptions } from '../../../src/config/logging.js';
+import { secretValues } from '../../../src/config/secrets.js';
+import { parseSettings } from '../../../src/config/settings.js';
 import {
   currentCorrelationId,
   runWithCorrelation,
 } from '../../../src/shared/correlation.js';
+import { fixtureEnv } from '../../fixtures/env.js';
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -22,7 +25,9 @@ function captureLogger() {
     },
   };
 
-  return { logger: pino(pinoOptions, stream), lines };
+  const options = loggerOptions(secretValues(parseSettings(fixtureEnv)));
+
+  return { logger: pino(options, stream), lines };
 }
 
 describe('correlation scope', () => {

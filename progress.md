@@ -6,8 +6,9 @@ Read this and `tests.json` at the start of every session (master Part II §24). 
 
 The app is a standalone Nest application context in `local-trading-agent-backend/`. It has no HTTP server and no telemetry. It validates settings, logs one startup line as structured JSON, closes the context and exits. It has no trading logic yet, and it does not connect to the database.
 
-- `TRADER_MODE` accepts only `paper`. Invalid settings refuse the start.
-- Logs are JSON through `pino` and `nestjs-pino`. Timestamps are UTC, `ANTHROPIC_API_KEY` and `DATABASE_URL` are redacted by key path, and `correlationId` comes from `src/shared/correlation.ts`.
+- Settings have two keys, `DATABASE_URL` and `TRADER_MODE`, and the app loads no Anthropic credential (D9). `TRADER_MODE` accepts only `paper`. Invalid settings, including an unparseable `DATABASE_URL`, refuse the start without printing the value.
+- Logs are JSON through `pino` and `nestjs-pino`, with UTC timestamps and a `correlationId` from `src/shared/correlation.ts`. Secrets are redacted by key path, and every line is also scrubbed by value: `src/config/secrets.ts` derives the loaded secret values from the settings (today the `DATABASE_URL` password, in each form it can be logged in), and a pino `hooks.streamWrite` replaces them with `[REDACTED]` wherever they appear. `AppModule` builds the logger from the settings parsed at boot.
+- Errors that Nest's default logger or Node print on a failed boot do not pass through pino. `scrubSecrets` is exported so S0e can apply it to them when it opens the first database connection.
 - `make test`, `make lint`, `make typecheck` and `make db-up` work from a clean checkout. These are the S0 "Done when" commands.
 
 ### Database
@@ -17,7 +18,7 @@ The app is a standalone Nest application context in `local-trading-agent-backend
 - Drizzle lives in the app folder: `drizzle.config.ts`, `src/db/schema.ts` (no tables yet) and `src/db/migrations/` (one empty migration, protected by the gate).
 - `pnpm db:generate` runs `drizzle-kit generate`. `pnpm db:migrate` applies the committed migrations to the database named by `DATABASE_URL` in the process environment, and fails when it is unset. Both set `DOTENV_CONFIG_PATH=/dev/null`, because drizzle-kit otherwise loads a `.env` from its working directory. No script uses `drizzle-kit push`.
 - `pnpm test:db` runs `test/**/*.db-spec.ts` against the compose Postgres. Each test works in a throwaway `trader_test_*` database and drops it afterwards; a guard in `test/fixtures/db.ts` refuses any other name. `pnpm test` and `pnpm test:e2e` collect no DB spec, so the gate needs no database.
-- There is no database client in the app yet: no `src/db/client.ts`, no pool and no connection at boot. The first job that stores data adds one, after S0c.
+- There is no database client in the app yet: no `src/db/client.ts`, no pool and no connection at boot. S0e adds one, now that S0c has merged.
 
 ### Research
 
@@ -27,12 +28,13 @@ The app is a standalone Nest application context in `local-trading-agent-backend
 
 - [x] S0a Repo foundation
 - [x] S0b Database: Postgres 16 in Docker, Drizzle with an empty first migration, `make db-up`, `pnpm test:db`, and the `research/` skeleton
+- [x] S0c Settings and log redaction: `ANTHROPIC_API_KEY` removed from the settings and `.env.example` (D9), a value-based scrub of the loaded secrets on top of the key paths, and no password in a `DATABASE_URL` parse error
 
 ## Next
 
-- S0c Log redaction hardening. It must merge before the app first connects to the database or calls Claude.
+- S0d Dependency cleanup: remove or justify the Express and `@nestjs/mau` advisory paths, re-resolve the lockfile, and pin the compose `postgres:16` image to a digest.
 
-S0c and S0d remain open under S0. S0b delivered the last S0 "Done when" command, but the milestone closes only when both have merged.
+S0d remains open under S0, and so does S0e, the database client, which opens the first connection now that S0c has merged. S0b delivered the last S0 "Done when" command, but the milestone closes only when both have merged.
 
 ## Settlements
 
@@ -60,4 +62,4 @@ typescript-eslint with type-aware rules replaces oxlint, following D2. `no-expli
 
 - `strictPropertyInitialization: false` is gone, and `noUncheckedIndexedAccess` is on.
 - `pnpm build` runs `pnpm typecheck` first. The build config excludes spec files, and the gate does not run `pnpm typecheck`, so this chain is what enforces types in tests.
-- `.env.example` has three keys. S0 is stricter than master Part II §3 and wins.
+- `.env.example` has two keys, `DATABASE_URL` and `TRADER_MODE=paper`. S0 is stricter than master Part II §3 and wins, and S0c removed `ANTHROPIC_API_KEY` per D9.
