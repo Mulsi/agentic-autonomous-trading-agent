@@ -33,8 +33,32 @@ export function listAppFiles(dir: string): string[] {
     .map((entry) => relative(appRoot, join(entry.parentPath, entry.name)));
 }
 
+/**
+ * Every file in the repo, as repo-relative paths. Directories named in `skip`
+ * are not entered at any depth. Only names are listed: nothing is read.
+ */
+export function listRepoFiles(skip: readonly string[]): string[] {
+  const files: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!skip.includes(entry.name)) walk(path);
+      } else {
+        files.push(relative(repoRoot, path));
+      }
+    }
+  };
+  walk(repoRoot);
+  return files;
+}
+
 export function isSpecFile(path: string): boolean {
-  return path.endsWith('.spec.ts') || path.endsWith('.e2e-spec.ts');
+  return (
+    path.endsWith('.spec.ts') ||
+    path.endsWith('.e2e-spec.ts') ||
+    path.endsWith('.db-spec.ts')
+  );
 }
 
 /** Non-spec files in `src/`, with their contents. */

@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createServer, type AddressInfo, type Server } from 'node:net';
 import { join } from 'node:path';
 import {
   FIXTURE_API_KEY,
@@ -109,6 +110,40 @@ describe('node dist/main.js with valid env', () => {
 
     expect(output).not.toContain(FIXTURE_API_KEY);
     expect(output).not.toContain(FIXTURE_DB_PASSWORD);
+  });
+});
+
+describe('node dist/main.js and the database', () => {
+  // A plain TCP listener stands in for Postgres and counts connections. The
+  // app has no database client until after S0c, so it must never dial out.
+  let server: Server;
+  let connections = 0;
+  let result: RunResult;
+
+  beforeAll(async () => {
+    server = createServer((socket) => {
+      connections += 1;
+      socket.destroy();
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    const url = new URL(fixtureEnv.DATABASE_URL);
+    url.hostname = '127.0.0.1';
+    url.port = String(port);
+
+    result = await runMain({ ...fixtureEnv, DATABASE_URL: url.toString() });
+  }, EXIT_LIMIT_MS + 5_000);
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('boots and exits 0 without connecting', () => {
+    expect(result.timedOut).toBe(false);
+    expect(result.code).toBe(0);
+    expect(connections).toBe(0);
   });
 });
 

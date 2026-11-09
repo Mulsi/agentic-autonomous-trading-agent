@@ -37,13 +37,28 @@ describe('progress.md', () => {
   const progress = readRepoFile('progress.md');
   const next = progress.split(/^## Next$/m)[1]?.split(/^## /m)[0] ?? '';
 
-  it('marks S0a done', () => {
+  it('marks S0a and S0b done', () => {
     expect(progress).toMatch(/^- \[x\] S0a /m);
+    expect(progress).toMatch(/^- \[x\] S0b /m);
   });
 
-  it('names S0b as next', () => {
-    expect(next).toContain('S0b');
-    expect(progress).not.toMatch(/^- \[x\] S0b /m);
+  it('names S0c as next', () => {
+    expect(next).toMatch(/^- S0c /m);
+    expect(progress).not.toMatch(/^- \[x\] S0c /m);
+  });
+
+  it('says S0c and S0d remain open under S0', () => {
+    expect(next).toContain('S0c and S0d remain open under S0');
+    expect(progress).not.toMatch(/^- \[x\] S0d /m);
+  });
+
+  it.each([
+    '`make db-up`',
+    '`pnpm db:migrate`',
+    '`pnpm test:db`',
+    '`research/`',
+  ])('describes %s', (needle) => {
+    expect(progress).toContain(needle);
   });
 
   it('records the D1 settlement', () => {

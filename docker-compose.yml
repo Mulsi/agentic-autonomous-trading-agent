@@ -1,0 +1,31 @@
+# Postgres 16 for slice 1 (SLICE_1_PLAN D2, D11). `make db-up` starts it and
+# applies the migrations. No other services: no Redis in slice 1.
+#
+# The credentials are fixed local-development values, published on loopback
+# only. They are not a secret: the only secret is ANTHROPIC_API_KEY.
+# `.env.example` and the Makefile carry the same URL.
+#
+# No variable interpolation and no env_file, so a repo-root .env never reaches
+# the container. The Makefile also passes --env-file /dev/null.
+services:
+  postgres:
+    image: postgres:16
+    command: postgres -c timezone=UTC -c log_timezone=UTC
+    environment:
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: local-dev-only
+      POSTGRES_DB: trader
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # TCP, not the socket, so the temporary server that initdb runs does not
+      # count as ready.
+      test: pg_isready -h 127.0.0.1 -U trader -d trader
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  pgdata:
