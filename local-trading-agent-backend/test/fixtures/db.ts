@@ -24,8 +24,9 @@ export function assertTestDatabaseName(name: string): string {
 }
 
 /**
- * The database a connection URL selects. A query string could select another
- * database (`?database=` or `?options=`), so any query string is refused.
+ * The database a connection URL selects. pg copies every query parameter into
+ * its config, so `?host=`, `?port=` or `?options=` could send the run elsewhere.
+ * Any query string is refused.
  */
 export function databaseOf(url: string): string {
   const parsed = new URL(url);

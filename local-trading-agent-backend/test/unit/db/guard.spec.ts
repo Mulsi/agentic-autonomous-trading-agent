@@ -84,7 +84,7 @@ describe('the DB test guard', () => {
     },
   );
 
-  it('refuses a URL whose query string could pick another database', () => {
+  it('refuses any URL with a query string', () => {
     const name = newTestDatabaseName();
 
     expect(() => databaseOf(`${unreachable(name)}?database=trader`)).toThrow(
@@ -93,6 +93,9 @@ describe('the DB test guard', () => {
     expect(() =>
       databaseOf(`${unreachable(name)}?options=-c%20search_path%3Dx`),
     ).toThrow(UnsafeDatabaseError);
+    expect(() => databaseOf(`${unreachable(name)}?host=elsewhere`)).toThrow(
+      UnsafeDatabaseError,
+    );
     expect(databaseOf(unreachable(name))).toBe(name);
   });
 
