@@ -22,6 +22,29 @@
       "reason": "human approved: protected paths (.env.example, src/config/) and criterion 37",
       "builder": "aa46ef784ee689b70",
       "updatedAt": "2026-11-09T16:01:42Z"
+    },
+    {
+      "id": "002-database",
+      "title": "S0b Database",
+      "branch": "factory/002-database",
+      "stage": "needs-human",
+      "round": 1,
+      "maxRounds": 2,
+      "rounds": [
+        {
+          "reviews": {
+            "security": "PASS",
+            "risk": "PASS",
+            "quant": "PASS",
+            "code": "PASS"
+          }
+        }
+      ],
+      "gate": "PASS",
+      "needsHuman": true,
+      "reason": "protected paths (.env.example, src/db/migrations/) and [human] criterion 34: read migration and drizzle.config.ts, accept local credentials, apply CLAUDE.md text",
+      "builder": "a442b919ce5621c67",
+      "updatedAt": "2026-11-09T16:52:42Z"
     }
   ]
 }
