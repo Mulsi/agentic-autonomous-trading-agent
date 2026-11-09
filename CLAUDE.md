@@ -26,8 +26,9 @@ Stack: TypeScript strict, Node 26, pnpm, NestJS, zod, Drizzle + Postgres 16, dec
 
 Reviewers enforce these. A change that breaks one does not merge.
 
-- **Claude cannot bypass safety.** It cannot change risk limits, disable stops or the kill switch, change the 48-entry limit, reach secrets, or approve its own exception. Claude has read-only tools and no execution tools.
-- **No real orders and no Binance keys in slice 1.** `TRADER_MODE` accepts only `paper`; `live` is not implemented, not just disabled. The only secret is `ANTHROPIC_API_KEY`.
+- **Claude cannot bypass safety.** It cannot change risk limits, disable stops or the kill switch, change the 48-entry limit, reach secrets, or approve its own exception. In slice 1 Claude has no tools at all: it reads a snapshot built by code.
+- **Claude runs only from 19:00 to 08:00 Europe/Ljubljana (D14),** through a `DecisionProvider` (slice 1: `claude -p`) with no tools at all. Code hands it one snapshot and reads one structured answer (D9, §9). Code enforces the window: outside it, a Claude call is WAIT and no CLI process starts. The engine and every exit run 24/7 without Claude.
+- **No real orders and no secrets in slice 1.** `TRADER_MODE` accepts only `paper`; `live` is not implemented, not just disabled. The app holds no Binance keys and no `ANTHROPIC_API_KEY`: Claude runs under the user's own login through the `claude` CLI, and the app never handles that credential.
 - **Entry gate:** ≥5 counted signals, ≥3 families, ≥2 groups, ≤2 counted per family. The risk engine re-verifies it and never trusts upstream.
 - **Default action is WAIT.** Malformed output, refusal, timeout, API error or budget exhaustion all degrade to WAIT.
 - **Exits are asymmetric and always allowed.** They skip entry checks, need no five bearish signals, and a Claude outage never blocks one.
