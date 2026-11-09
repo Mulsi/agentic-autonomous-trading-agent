@@ -1,0 +1,11 @@
+# Offline research only (SLICE_1_PLAN D13). See README.md for the boundary.
+[project]
+name = "trader-research"
+version = "0.0.0"
+description = "Offline research for the local trading agent. Never in the live decision path."
+requires-python = "==3.12.*"
+dependencies = []
+
+[tool.uv]
+# A workspace for notebooks and scripts, not an installable package.
+package = false

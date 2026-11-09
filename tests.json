@@ -9,7 +9,19 @@
     {
       "file": "local-trading-agent-backend/test/app.e2e-spec.ts",
       "milestone": "S0",
-      "covers": "built app exits by itself, logs JSON lines only, refuses invalid settings, no secrets in output",
+      "covers": "built app exits by itself, logs JSON lines only, refuses invalid settings, no secrets in output, no database connection at boot",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/db/migrate.db-spec.ts",
+      "milestone": "S0",
+      "covers": "pnpm db:migrate on a throwaway database: one migration row, no objects outside drizzle, idempotent, cleanup on failure, non-zero exits without leaking the password",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/db/server.db-spec.ts",
+      "milestone": "S0",
+      "covers": "compose Postgres is major version 16 and runs in UTC",
       "status": "passing"
     },
     {
@@ -43,15 +55,57 @@
       "status": "passing"
     },
     {
+      "file": "local-trading-agent-backend/test/unit/db/compose.spec.ts",
+      "milestone": "S0",
+      "covers": "docker-compose.yml: one postgres:16 service on 127.0.0.1, named volume, pg_isready, UTC, no interpolation, credentials match .env.example and make db-up",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/db/drizzle.spec.ts",
+      "milestone": "S0",
+      "covers": "drizzle dependencies, config, empty schema and migration, db scripts, app stays unconnected",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/db/guard.spec.ts",
+      "milestone": "S0",
+      "covers": "DB test guard refuses to create, migrate or drop trader, postgres and other non-test databases",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/db/migrate-env.spec.ts",
+      "milestone": "S0",
+      "covers": "pnpm db:migrate ignores a .env in its working directory",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/db/suites.spec.ts",
+      "milestone": "S0",
+      "covers": "DB specs live under test/, only pnpm test:db collects them",
+      "status": "passing"
+    },
+    {
       "file": "local-trading-agent-backend/test/unit/shared/correlation.spec.ts",
       "milestone": "S0",
       "covers": "correlation scopes across await, concurrency, generated UUIDs, no ID outside a scope",
       "status": "passing"
     },
     {
+      "file": "local-trading-agent-backend/test/unit/tooling/parsers.spec.ts",
+      "milestone": "S0",
+      "covers": "strict YAML, TOML and Makefile readers used by the repo-file checks",
+      "status": "passing"
+    },
+    {
       "file": "local-trading-agent-backend/test/unit/tooling/repo-files.spec.ts",
       "milestone": "S0",
-      "covers": ".env.example, progress.md and tests.json at the repo root",
+      "covers": ".env.example, progress.md (S0b done, S0c next) and tests.json at the repo root",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/tooling/research.spec.ts",
+      "milestone": "S0",
+      "covers": "research/ uv skeleton, D13 README, no Python outside research/, TypeScript toolchain ignores it",
       "status": "passing"
     },
     {

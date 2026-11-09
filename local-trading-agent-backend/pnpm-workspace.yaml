@@ -1,0 +1,4 @@
+# Install scripts stay off. drizzle-kit pulls in esbuild, whose postinstall only
+# checks its platform binary; drizzle-kit runs without it.
+allowBuilds:
+  esbuild: false
