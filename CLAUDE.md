@@ -18,7 +18,12 @@ pnpm lint        # eslint, type-aware
 pnpm typecheck   # tsc --noEmit over src/, test/ and spec files
 pnpm build       # typecheck, then nest build
 pnpm test:e2e    # run pnpm build first
+pnpm db:migrate  # apply committed migrations to DATABASE_URL from the process env
+pnpm test:db     # throwaway trader_test_* databases; run make db-up first
+make db-up       # repo root: Postgres 16 in Docker, then pnpm db:migrate
 ```
+
+Schema changes go through `pnpm db:generate` and a committed migration under `src/db/migrations/`, never `drizzle-kit push`. Run drizzle-kit only through the `db:*` scripts: a bare `drizzle-kit` run loads an app-folder `.env`.
 
 Stack: TypeScript strict, Node 26, pnpm, NestJS, zod, Drizzle + Postgres 16, decimal.js, vitest + fast-check. ESM: relative imports end in `.js`. Python exists only in `research/`, offline (D13).
 
