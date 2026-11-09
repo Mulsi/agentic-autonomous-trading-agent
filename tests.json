@@ -37,6 +37,12 @@
       "status": "passing"
     },
     {
+      "file": "local-trading-agent-backend/test/unit/config/app-logger.spec.ts",
+      "milestone": "S0",
+      "covers": "AppModule builds its logger from the settings parsed at boot, and its root logger scrubs secret values from every line, buffered boot lines included",
+      "status": "passing"
+    },
+    {
       "file": "local-trading-agent-backend/test/unit/config/config.module.spec.ts",
       "milestone": "S0",
       "covers": "settings through DI with two keys, ANTHROPIC_API_KEY ignored (D9), unparseable DATABASE_URL refuses boot without the password, import needs no env, start scripts load ../.env",
