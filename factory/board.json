@@ -45,6 +45,29 @@
       "reason": "human approved: protected paths (.env.example, src/db/migrations/) and criterion 34",
       "builder": "a442b919ce5621c67",
       "updatedAt": "2026-11-09T16:55:58Z"
+    },
+    {
+      "id": "003-settings-redaction",
+      "title": "S0c Settings and log redaction",
+      "branch": "factory/003-settings-redaction",
+      "stage": "needs-human",
+      "round": 1,
+      "maxRounds": 2,
+      "rounds": [
+        {
+          "reviews": {
+            "security": "PASS",
+            "risk": "PASS",
+            "quant": "PASS",
+            "code": "PASS"
+          }
+        }
+      ],
+      "gate": "PASS",
+      "needsHuman": true,
+      "reason": "protected paths (.env.example, src/config/) and [human] criterion 30: confirm D9 settings change and accept the scrub's known limits",
+      "builder": "a8faac51cbc4f93dd",
+      "updatedAt": "2026-11-09T17:32:44Z"
     }
   ]
 }
