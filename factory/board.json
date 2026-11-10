@@ -91,6 +91,29 @@
       "reason": "",
       "builder": "a277f5b3aca75c9eb",
       "updatedAt": "2026-11-10T14:59:14Z"
+    },
+    {
+      "id": "005-database-client",
+      "title": "S0e Database client",
+      "branch": "factory/005-database-client",
+      "stage": "needs-human",
+      "round": 1,
+      "maxRounds": 2,
+      "rounds": [
+        {
+          "reviews": {
+            "security": "PASS",
+            "risk": "PASS",
+            "quant": "PASS",
+            "code": "PASS"
+          }
+        }
+      ],
+      "gate": "PASS",
+      "needsHuman": true,
+      "reason": "protected paths (.env.example, src/config/, src/db/migrations/), [human] criterion 39 and open decisions; risk review items 1-2 worth fixing first",
+      "builder": "ab0ea5262dba638ef",
+      "updatedAt": "2026-11-10T18:15:52Z"
     }
   ]
 }
