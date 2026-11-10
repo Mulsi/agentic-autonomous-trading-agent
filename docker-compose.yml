@@ -9,7 +9,9 @@
 # the container. The Makefile also passes --env-file /dev/null.
 services:
   postgres:
-    image: postgres:16
+    # Pinned to the multi-platform image index digest, so every checkout runs
+    # the same bytes. progress.md says how to move it to a newer 16.x release.
+    image: postgres:16.15@sha256:f9a7b9ebf6f56201f949db745e47bc423c0f0f8294bafe991cc10bf74b029657
     command: postgres -c timezone=UTC -c log_timezone=UTC
     environment:
       POSTGRES_USER: trader

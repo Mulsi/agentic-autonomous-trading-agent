@@ -14,8 +14,8 @@ interface Line {
 }
 
 /**
- * Block-style YAML: nested maps, lists of scalars, plain or quoted scalars and
- * full-line comments. Flow collections, anchors, aliases, block scalars, tags,
+ * Block-style YAML: nested maps with plain or simply quoted keys, lists of
+ * scalars, plain or quoted scalars and full-line comments. Flow collections, anchors, aliases, block scalars, tags,
  * merge keys, tabs and maps inside lists all throw.
  */
 export function parseYaml(source: string): YamlMap {
@@ -41,12 +41,18 @@ export function parseYaml(source: string): YamlMap {
       if (line.indent !== indent || line.text.startsWith('- ')) {
         throw new Error(`yaml line ${line.number}: unexpected indent`);
       }
-      const match = /^([A-Za-z0-9_.-]+):(?: (.*))?$/.exec(line.text);
-      if (!match?.[1]) throw new Error(`yaml line ${line.number}: not a key`);
-      const key = match[1];
+      // A plain key, or a quoted one with no quote or backslash inside it.
+      const match =
+        /^(?:([A-Za-z0-9_.-]+)|'([^'\\]+)'|"([^"\\]+)"):(?: (.*))?$/.exec(
+          line.text,
+        );
+      const key = match?.[1] ?? match?.[2] ?? match?.[3];
+      if (key === undefined) {
+        throw new Error(`yaml line ${line.number}: not a key`);
+      }
       if (key in map) throw new Error(`yaml line ${line.number}: duplicate`);
       next += 1;
-      const rest = match[2]?.trim() ?? '';
+      const rest = match?.[4]?.trim() ?? '';
       if (rest !== '') {
         map[key] = parseScalar(rest, line.number);
       } else {

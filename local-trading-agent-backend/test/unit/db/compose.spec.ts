@@ -32,21 +32,43 @@ describe('docker-compose.yml', () => {
     expect(Object.keys(services)).toHaveLength(1);
   });
 
+  // `16`, or `16.` / `16-` followed by a minor version or a variant, then a
+  // mandatory image index digest, so every checkout runs the same bytes.
+  const PINNED_IMAGE =
+    /^postgres:16(?:[.-][A-Za-z0-9][A-Za-z0-9.-]*)?@sha256:[0-9a-f]{64}$/;
+  const HEX = '0123456789abcdef'.repeat(4);
+  const DIGEST = `sha256:${HEX}`;
+
   it('runs postgres tagged on major version 16', () => {
-    // `16`, or `16.` / `16-` followed by a minor version or a variant.
-    expect(service.image).toMatch(
-      /^postgres:16(?:[.-][A-Za-z0-9][A-Za-z0-9.-]*)?(?:@sha256:[0-9a-f]{64})?$/,
-    );
+    expect(service.image).toMatch(PINNED_IMAGE);
   });
 
-  it.each(['postgres', 'postgres:latest', 'postgres:17', 'postgres:160'])(
-    'the image check rejects %s',
+  it('pins the image by digest', () => {
+    expect(service.image).toMatch(/@sha256:[0-9a-f]{64}$/);
+  });
+
+  it.each([`postgres:16@${DIGEST}`, `postgres:16.15@${DIGEST}`])(
+    'the image check accepts %s',
     (image) => {
-      expect(image).not.toMatch(
-        /^postgres:16(?:[.-][A-Za-z0-9][A-Za-z0-9.-]*)?(?:@sha256:[0-9a-f]{64})?$/,
-      );
+      expect(image).toMatch(PINNED_IMAGE);
     },
   );
+
+  it.each([
+    'postgres',
+    'postgres:latest',
+    'postgres:17',
+    'postgres:160',
+    'postgres:16',
+    'postgres:16.15',
+    `postgres:17.6@${DIGEST}`,
+    `postgres:16.15@sha256:${HEX.toUpperCase()}`,
+    `postgres:16.15@sha256:${HEX.slice(0, -1)}`,
+    `postgres:16.15@sha512:${HEX}`,
+    `postgres@${DIGEST}`,
+  ])('the image check rejects %s', (image) => {
+    expect(image).not.toMatch(PINNED_IMAGE);
+  });
 
   it('publishes its port on 127.0.0.1 only', () => {
     const ports = asStrings(service.ports, 'ports');

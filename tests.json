@@ -27,7 +27,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/app/no-telemetry.spec.ts",
       "milestone": "S0",
-      "covers": "telemetry and HTTP packages removed from package.json, lockfile, source and README",
+      "covers": "package.json has no @nestjs/observe, @nestjs/platform-express, supertest, @types/supertest or @types/express; pnpm-lock.yaml never mentions @nestjs/observe, has no package or snapshot entry for @nestjs/platform-express, express, multer, cors, supertest, @types/express or @types/supertest, and no @nestjs/platform-express peer suffix; src, test and the README never mention @nestjs/observe or OBSERVE_; @nestjs/platform-express and express fail to resolve from @nestjs/core with MODULE_NOT_FOUND, while tslib resolves",
       "status": "passing"
     },
     {
@@ -55,6 +55,12 @@
       "status": "passing"
     },
     {
+      "file": "local-trading-agent-backend/test/unit/config/secrets.property.spec.ts",
+      "milestone": "S0",
+      "covers": "fast-check property over 2,000 runs: every DATABASE_URL that parseSettings accepts gets through secretValues and loggerOptions without throwing (boot availability); the generator reaches the boundary: at least a quarter pass, some fail, each listed passing shape occurs and holds on the parsed URL (edge ASCII and C0, edge U+00A0 or U+FEFF, inner tab/LF/CR, percent-encoded, invalid-percent, raw @ and non-ASCII passwords, bracketed IPv6 and non-ASCII hosts, explicit port, both schemes, upper-case scheme), and the three UNPARSEABLE_DATABASE_URLS shapes occur and always fail",
+      "status": "passing"
+    },
+    {
       "file": "local-trading-agent-backend/test/unit/config/secrets.spec.ts",
       "milestone": "S0",
       "covers": "secret values from DATABASE_URL in raw, normalized, decoded and JSON-escaped forms, none without a password, unparseable URL throws without input, cause or password, scrubSecrets longest first and never the empty string, new URL and process.env each in one file",
@@ -69,7 +75,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/db/compose.spec.ts",
       "milestone": "S0",
-      "covers": "docker-compose.yml: one postgres:16 service on 127.0.0.1, named volume, pg_isready, UTC, no interpolation, credentials match .env.example and make db-up",
+      "covers": "docker-compose.yml: one postgres:16 service pinned to an image digest (the check rejects an undigested tag), on 127.0.0.1, named volume, pg_isready, UTC, no interpolation, credentials match .env.example and make db-up",
       "status": "passing"
     },
     {
@@ -103,15 +109,21 @@
       "status": "passing"
     },
     {
+      "file": "local-trading-agent-backend/test/unit/tooling/dependencies.spec.ts",
+      "milestone": "S0",
+      "covers": "@nestjs/mau, the deploy script and the README Deployment text gone; typescript pinned with a tilde, locked on that minor and inside the locked typescript-eslint peer range; pnpm-workspace.yaml denies every install script, holds only allowBuilds and overrides, and matches the lockfile overrides; esbuild GHSA-67mh-4wv8-2f99: progress.md states the decision, and with the override only @esbuild-kit/core-utils>esbuild is overridden, no esbuild is below 0.25.0 and every esbuild is one drizzle-kit, tsx or vite uses (or, without it, the fallback is asserted); fast-check is a stable devDependency only",
+      "status": "passing"
+    },
+    {
       "file": "local-trading-agent-backend/test/unit/tooling/parsers.spec.ts",
       "milestone": "S0",
-      "covers": "strict YAML, TOML and Makefile readers used by the repo-file checks",
+      "covers": "strict YAML (plain or simply quoted keys), TOML and Makefile readers used by the repo-file checks",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/unit/tooling/repo-files.spec.ts",
       "milestone": "S0",
-      "covers": ".env.example has two keys (D9), ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0c done, S0d next) and tests.json at the repo root",
+      "covers": ".env.example has two keys (D9), ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0d done, S0e next, digest pin in Database, Dependencies settlement) and tests.json at the repo root",
       "status": "passing"
     },
     {

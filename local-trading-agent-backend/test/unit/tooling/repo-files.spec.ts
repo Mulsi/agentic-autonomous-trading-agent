@@ -17,6 +17,12 @@ function section(markdown: string, heading: string): string {
   return start?.split(/^## /m)[0] ?? '';
 }
 
+/** The text of a `### ` subsection, up to the next heading of any level. */
+function subsection(markdown: string, heading: string): string {
+  const start = markdown.split(new RegExp(`^### ${heading}$`, 'm'))[1];
+  return start?.split(/^#{2,3} /m)[0] ?? '';
+}
+
 describe('.env.example', () => {
   const example = parseEnv(readRepoFile('.env.example'));
 
@@ -70,19 +76,46 @@ describe('progress.md', () => {
   const progress = readRepoFile('progress.md');
   const next = section(progress, 'Next');
 
-  it('marks S0a, S0b and S0c done', () => {
+  it('marks S0a, S0b, S0c and S0d done', () => {
     expect(progress).toMatch(/^- \[x\] S0a /m);
     expect(progress).toMatch(/^- \[x\] S0b /m);
     expect(progress).toMatch(/^- \[x\] S0c /m);
+    expect(progress).toMatch(/^- \[x\] S0d /m);
   });
 
-  it('names S0d as next', () => {
-    expect(next).toMatch(/^- S0d /m);
-    expect(progress).not.toMatch(/^- \[x\] S0d /m);
+  it('names S0e as next', () => {
+    expect(next).toMatch(/^- S0e /m);
+    expect(progress).not.toMatch(/^- \[x\] S0e /m);
   });
 
-  it('says S0d remains open under S0', () => {
-    expect(next).toContain('S0d remains open under S0');
+  it('says S0e remains open under S0', () => {
+    expect(next).toContain('S0e remains open under S0');
+  });
+
+  it('mentions the digest pin in its Database section', () => {
+    const database = subsection(section(progress, 'Current state'), 'Database');
+
+    expect(database).toMatch(/pinned by digest/);
+    expect(database).toContain('`make db-up`');
+    expect(database).toContain('`pnpm test:db`');
+  });
+
+  it('has a Dependencies settlement', () => {
+    const settlement = subsection(
+      section(progress, 'Settlements'),
+      'Dependencies',
+    );
+
+    expect(settlement).not.toBe('');
+    for (const needle of [
+      '@nestjs/platform-express',
+      '@nestjs/mau',
+      '`deploy`',
+      'typescript',
+      'GHSA-67mh-4wv8-2f99',
+    ]) {
+      expect(settlement).toContain(needle);
+    }
   });
 
   it('mentions the value-based scrub in Current state', () => {
