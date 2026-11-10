@@ -1,31 +1,49 @@
+import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 import { Logger as NestPinoLogger, LoggerModule } from 'nestjs-pino';
 import { pino, type Logger } from 'pino';
-import { pinoOptions } from '../../../src/config/logging.js';
-import { parseSettings } from '../../../src/config/settings.js';
+import { loggerOptions } from '../../../src/config/logging.js';
+import { secretValues } from '../../../src/config/secrets.js';
+import { parseSettings, type Settings } from '../../../src/config/settings.js';
 import {
   FIXTURE_API_KEY,
   FIXTURE_DATABASE_URL,
   FIXTURE_DB_PASSWORD,
   fixtureEnv,
 } from '../../fixtures/env.js';
+import { captureStream, expectClean, REDACTED } from '../../fixtures/logs.js';
 import { nonSpecSources, readPackageJson } from '../../fixtures/repo.js';
 
-function captureLogger(): { logger: Logger; output: () => string } {
-  const lines: string[] = [];
-  const stream = {
-    write(line: string) {
-      lines.push(line);
-    },
-  };
+const S = FIXTURE_DB_PASSWORD;
+const settings = parseSettings(fixtureEnv);
 
-  return { logger: pino(pinoOptions, stream), output: () => lines.join('') };
+/** "The logger": pino on the options from logging.ts, for these settings. */
+function captureLogger(forSettings: Settings = settings): {
+  logger: Logger;
+  lines: string[];
+} {
+  const { stream, lines } = captureStream();
+  const options = loggerOptions(secretValues(forSettings));
+
+  return { logger: pino(options, stream), lines };
 }
 
-function expectRedacted(output: string): void {
-  expect(output).not.toContain(FIXTURE_API_KEY);
-  expect(output).not.toContain(FIXTURE_DB_PASSWORD);
-  expect(output).toContain('[REDACTED]');
+/** Pino on the key paths alone: options built with no secret values. */
+function keyPathLogger(): { logger: Logger; lines: string[] } {
+  const { stream, lines } = captureStream();
+
+  return { logger: pino(loggerOptions([]), stream), lines };
+}
+
+/** Clean for the fixture settings: no password and no URL as loaded. */
+function expectCleanLines(lines: readonly string[]): Record<string, unknown>[] {
+  return expectClean(lines, [S, FIXTURE_DATABASE_URL]);
+}
+
+function onlyLine(lines: readonly string[]): Record<string, unknown> {
+  expect(lines).toHaveLength(1);
+  const [line] = expectCleanLines(lines);
+  return line ?? {};
 }
 
 describe('logging dependencies', () => {
@@ -36,101 +54,360 @@ describe('logging dependencies', () => {
 
 describe('log line shape', () => {
   it('writes level, msg and an ISO-8601 UTC time', () => {
-    const { logger, output } = captureLogger();
+    const { logger, lines } = captureLogger();
 
     logger.info('hello');
 
-    const line = JSON.parse(output()) as Record<string, unknown>;
+    const line = JSON.parse(lines.join('')) as Record<string, unknown>;
     expect(line.level).toBe('info');
     expect(line.msg).toBe('hello');
     expect(line.time).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   });
 });
 
-describe('secret redaction', () => {
-  const settings = parseSettings(fixtureEnv);
+describe('secret redaction by key path', () => {
+  // Built with no secret values, so only the key paths can redact here.
+  function expectRedacted(lines: readonly string[]): void {
+    const output = lines.join('');
+    expect(output).not.toContain(FIXTURE_API_KEY);
+    expect(output).not.toContain(S);
+    expect(output).toContain(REDACTED);
+  }
 
-  it('redacts { ANTHROPIC_API_KEY }', () => {
-    const { logger, output } = captureLogger();
+  it('redacts { ANTHROPIC_API_KEY }, a defensive name with no setting', () => {
+    const { logger, lines } = keyPathLogger();
 
     logger.info({ ANTHROPIC_API_KEY: FIXTURE_API_KEY }, 'x');
 
-    expectRedacted(output());
+    expectRedacted(lines);
+    expect(JSON.parse(lines.join(''))).toMatchObject({
+      ANTHROPIC_API_KEY: REDACTED,
+    });
   });
 
   it('redacts { DATABASE_URL }', () => {
-    const { logger, output } = captureLogger();
+    const { logger, lines } = keyPathLogger();
 
     logger.info({ DATABASE_URL: FIXTURE_DATABASE_URL }, 'x');
 
-    expectRedacted(output());
+    expectRedacted(lines);
+    expect(JSON.parse(lines.join(''))).toMatchObject({
+      DATABASE_URL: REDACTED,
+    });
   });
 
   it('redacts { settings }', () => {
-    const { logger, output } = captureLogger();
+    const { logger, lines } = keyPathLogger();
 
     logger.info({ settings }, 'x');
 
-    expectRedacted(output());
-    expect(JSON.parse(output())).toMatchObject({
-      settings: {
-        ANTHROPIC_API_KEY: '[REDACTED]',
-        DATABASE_URL: '[REDACTED]',
-        TRADER_MODE: 'paper',
-      },
+    expectRedacted(lines);
+    expect(JSON.parse(lines.join(''))).toMatchObject({
+      settings: { DATABASE_URL: REDACTED, TRADER_MODE: 'paper' },
     });
   });
 
   it('redacts the settings object itself', () => {
-    const { logger, output } = captureLogger();
+    const { logger, lines } = keyPathLogger();
 
     logger.info(settings, 'x');
 
-    expectRedacted(output());
-    expect(JSON.parse(output())).toMatchObject({
-      ANTHROPIC_API_KEY: '[REDACTED]',
-      DATABASE_URL: '[REDACTED]',
+    expectRedacted(lines);
+    expect(JSON.parse(lines.join(''))).toMatchObject({
+      DATABASE_URL: REDACTED,
       TRADER_MODE: 'paper',
     });
   });
 
   it('redacts settings under any other one-level key', () => {
-    const { logger, output } = captureLogger();
+    const { logger, lines } = keyPathLogger();
 
     logger.info({ config: settings }, 'x');
 
-    expectRedacted(output());
+    expectRedacted(lines);
+    expect(JSON.parse(lines.join(''))).toMatchObject({
+      config: { DATABASE_URL: REDACTED, TRADER_MODE: 'paper' },
+    });
   });
 
   it('redacts child logger bindings', () => {
-    const { logger, output } = captureLogger();
+    const { logger, lines } = keyPathLogger();
 
     logger.child({ settings }).info('x');
 
-    expectRedacted(output());
+    expectRedacted(lines);
+    expect(JSON.parse(lines.join(''))).toMatchObject({
+      settings: { DATABASE_URL: REDACTED, TRADER_MODE: 'paper' },
+    });
   });
 
-  it('redacts through the Nest logger too', async () => {
-    const lines: string[] = [];
-    const stream = {
-      write(line: string) {
-        lines.push(line);
-      },
-    };
-    const moduleRef = await Test.createTestingModule({
-      imports: [LoggerModule.forRoot({ pinoHttp: [pinoOptions, stream] })],
-    }).compile();
-    const logger = moduleRef.get(NestPinoLogger);
+  it('keeps the key paths when secret values are given too', () => {
+    const { logger, lines } = captureLogger();
 
+    logger.info({ ANTHROPIC_API_KEY: FIXTURE_API_KEY, settings }, 'x');
+
+    expectRedacted(lines);
+    expect(onlyLine(lines)).toMatchObject({
+      ANTHROPIC_API_KEY: REDACTED,
+      settings: { DATABASE_URL: REDACTED, TRADER_MODE: 'paper' },
+    });
+  });
+});
+
+describe('value scrub: nested more than one level deep', () => {
+  it('scrubs { a: { b: settings } }', () => {
+    const { logger, lines } = captureLogger();
+
+    logger.info({ a: { b: settings } }, 'x');
+
+    expect(onlyLine(lines)).toMatchObject({
+      a: { b: { DATABASE_URL: REDACTED, TRADER_MODE: 'paper' } },
+    });
+  });
+
+  it('scrubs { a: { b: { c: settings } } }', () => {
+    const { logger, lines } = captureLogger();
+
+    logger.info({ a: { b: { c: settings } } }, 'x');
+
+    expect(onlyLine(lines)).toMatchObject({
+      a: { b: { c: { DATABASE_URL: REDACTED, TRADER_MODE: 'paper' } } },
+    });
+  });
+
+  it('scrubs { list: [settings] }', () => {
+    const { logger, lines } = captureLogger();
+
+    logger.info({ list: [settings] }, 'x');
+
+    expect(onlyLine(lines)).toMatchObject({
+      list: [{ DATABASE_URL: REDACTED, TRADER_MODE: 'paper' }],
+    });
+  });
+});
+
+describe('value scrub: key names outside the key-path list', () => {
+  it.each([
+    ['apiKey', S],
+    ['password', S],
+    ['connectionString', FIXTURE_DATABASE_URL],
+    ['dsn', FIXTURE_DATABASE_URL],
+  ])('scrubs { %s }', (key, value) => {
+    const { logger, lines } = captureLogger();
+
+    logger.info({ [key]: value }, 'x');
+
+    expect(onlyLine(lines)).toMatchObject({ [key]: REDACTED });
+  });
+});
+
+describe('value scrub: interpolated into the message', () => {
+  it('scrubs a template string holding the URL', () => {
+    const { logger, lines } = captureLogger();
+
+    logger.info(`connecting to ${FIXTURE_DATABASE_URL} now`);
+
+    expect(onlyLine(lines).msg).toBe(`connecting to ${REDACTED} now`);
+  });
+
+  it('scrubs a template string holding the password', () => {
+    const { logger, lines } = captureLogger();
+
+    logger.info(`password ${S} rejected`);
+
+    expect(onlyLine(lines).msg).toBe(`password ${REDACTED} rejected`);
+  });
+
+  it('scrubs printf-style interpolation', () => {
+    const { logger, lines } = captureLogger();
+
+    logger.info('connect %s', FIXTURE_DATABASE_URL);
+
+    expect(onlyLine(lines).msg).toBe(`connect ${REDACTED}`);
+  });
+});
+
+describe('value scrub: errors and bindings', () => {
+  it('scrubs an error message and stack that hold the URL', () => {
+    const { logger, lines } = captureLogger();
+    const err = new Error(`cannot reach ${FIXTURE_DATABASE_URL}`);
+    expect(err.stack).toContain(FIXTURE_DATABASE_URL);
+
+    logger.error({ err });
+
+    const line = onlyLine(lines) as { err: { message: string; stack: string } };
+    expect(line.err.message).toBe(`cannot reach ${REDACTED}`);
+    expect(line.err.stack).toContain(`cannot reach ${REDACTED}`);
+  });
+
+  it('scrubs an error whose cause holds the password', () => {
+    const { logger, lines } = captureLogger();
+    const err = new Error('connect failed', {
+      cause: new Error(`password ${S} rejected`),
+    });
+
+    logger.error({ err });
+
+    expect(lines.join('')).toContain(`password ${REDACTED} rejected`);
+    expectCleanLines(lines);
+  });
+
+  it('scrubs child bindings that hold the URL', () => {
+    const { logger, lines } = captureLogger();
+
+    logger.child({ conn: FIXTURE_DATABASE_URL }).info('x');
+
+    expect(onlyLine(lines)).toMatchObject({ conn: REDACTED, msg: 'x' });
+  });
+});
+
+describe('value scrub: encoded passwords', () => {
+  const cases = [
+    {
+      name: 'escaped characters',
+      url: `postgresql://trader:pw%22q%5Cs%40-${S}@localhost:5432/trader`,
+      forms: [
+        `postgresql://trader:pw%22q%5Cs%40-${S}@localhost:5432/trader`,
+        `pw%22q%5Cs%40-${S}`,
+        `pw"q\\s@-${S}`,
+      ],
+    },
+    {
+      name: 'mixed encoding',
+      url: `postgresql://trader:mix@d%20${S}@localhost:5432/trader`,
+      forms: [`postgresql://trader:mix@d%20${S}@localhost:5432/trader`],
+    },
+    {
+      name: 'a password that does not decode',
+      url: `postgresql://trader:pa%zz-${S}@localhost:5432/trader`,
+      forms: [
+        `postgresql://trader:pa%zz-${S}@localhost:5432/trader`,
+        `pa%zz-${S}`,
+      ],
+    },
+  ];
+
+  it('the decoded form serializes with escaped characters', () => {
+    expect(JSON.stringify(`pw"q\\s@-${S}`)).toBe(`"pw\\"q\\\\s@-${S}"`);
+  });
+
+  it.each(cases)('accepts the $name URL as a setting', ({ url }) => {
+    expect(
+      parseSettings({ ...fixtureEnv, DATABASE_URL: url }).DATABASE_URL,
+    ).toBe(url);
+  });
+
+  it.each(cases)('builds the logger options for $name', ({ url }) => {
+    const forSettings = parseSettings({ ...fixtureEnv, DATABASE_URL: url });
+
+    expect(() => loggerOptions(secretValues(forSettings))).not.toThrow();
+  });
+
+  it.each(cases)('scrubs every form of $name', ({ url, forms }) => {
+    const forSettings = parseSettings({ ...fixtureEnv, DATABASE_URL: url });
+    const { logger, lines } = captureLogger(forSettings);
+
+    for (const form of forms) {
+      logger.info(`value ${form} end`);
+      logger.info({ value: form }, 'x');
+    }
+
+    const parsed = expectClean(lines, [S, url]);
+    expect(parsed).toHaveLength(forms.length * 2);
+    for (const [index, line] of parsed.entries()) {
+      if (index % 2 === 0) expect(line.msg).toBe(`value ${REDACTED} end`);
+      else expect(line.value).toBe(REDACTED);
+    }
+  });
+});
+
+describe('value scrub: no secret, no change', () => {
+  it.each([
+    'postgresql://localhost/trader',
+    'postgresql://trader@localhost/trader',
+    'postgresql://trader:@localhost/trader',
+  ])('leaves a line holding %s unchanged', (url) => {
+    const forSettings = parseSettings({ ...fixtureEnv, DATABASE_URL: url });
+    const { logger, lines } = captureLogger(forSettings);
+
+    logger.info(`connecting to ${url}`);
+
+    expect(secretValues(forSettings)).toEqual([]);
+    expect(lines.join('')).not.toContain(REDACTED);
+    expect(JSON.parse(lines.join(''))).toMatchObject({
+      msg: `connecting to ${url}`,
+    });
+  });
+
+  it('leaves a line with no secret form unchanged when a password is set', () => {
+    const { logger, lines } = captureLogger();
+
+    logger.info({ host: 'localhost', port: 5432 }, 'connecting to trader');
+
+    expect(lines.join('')).not.toContain(REDACTED);
+    expect(JSON.parse(lines.join(''))).toMatchObject({
+      msg: 'connecting to trader',
+      host: 'localhost',
+      port: 5432,
+    });
+  });
+});
+
+describe('through the nestjs-pino Logger', () => {
+  // nestjs-pino keeps one root logger per process, so this file builds one
+  // LoggerModule and shares it between tests.
+  const capture = captureStream();
+  let moduleRef: TestingModule;
+  let logger: NestPinoLogger;
+
+  beforeAll(async () => {
+    const options = loggerOptions(secretValues(settings));
+    moduleRef = await Test.createTestingModule({
+      imports: [LoggerModule.forRoot({ pinoHttp: [options, capture.stream] })],
+    }).compile();
+    logger = moduleRef.get(NestPinoLogger);
+  });
+
+  afterAll(async () => {
+    await moduleRef.close();
+  });
+
+  beforeEach(() => {
+    capture.lines.length = 0;
+  });
+
+  it('redacts through the Nest logger too', () => {
     logger.log({ settings });
     logger.log(settings);
     logger.log({ msg: 'x', ANTHROPIC_API_KEY: FIXTURE_API_KEY }, 'Context');
-    await moduleRef.close();
 
-    expect(lines).toHaveLength(3);
-    for (const line of lines) {
-      expectRedacted(line);
+    expect(capture.lines).toHaveLength(3);
+    for (const line of expectCleanLines(capture.lines)) {
+      expect(JSON.stringify(line)).not.toContain(FIXTURE_API_KEY);
+      expect(JSON.stringify(line)).toContain(REDACTED);
     }
+  });
+
+  it('scrubs one shape from each value-scrub case', () => {
+    logger.log({ msg: 'nested', a: { b: { c: settings } } });
+    logger.log({ msg: 'renamed', dsn: FIXTURE_DATABASE_URL }, 'Context');
+    logger.log(`connecting to ${FIXTURE_DATABASE_URL}`, 'Context');
+    logger.error(new Error(`cannot reach ${FIXTURE_DATABASE_URL}`), 'Context');
+
+    const [nested, renamed, message, error] = expectCleanLines(capture.lines);
+    expect(capture.lines).toHaveLength(4);
+    expect(nested).toMatchObject({
+      a: { b: { c: { DATABASE_URL: REDACTED } } },
+    });
+    expect(renamed).toMatchObject({ dsn: REDACTED, context: 'Context' });
+    expect(message).toMatchObject({
+      msg: `connecting to ${REDACTED}`,
+      context: 'Context',
+    });
+    expect(error).toMatchObject({
+      err: { message: `cannot reach ${REDACTED}` },
+      context: 'Context',
+    });
   });
 });
 

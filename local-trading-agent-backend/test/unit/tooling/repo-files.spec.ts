@@ -3,53 +3,97 @@ import { join } from 'node:path';
 import { parseEnv } from 'node:util';
 import { z } from 'zod';
 import { parseSettings, settingsSchema } from '../../../src/config/settings.js';
-import { FIXTURE_API_KEY } from '../../fixtures/env.js';
 import {
   isSpecFile,
   listAppFiles,
+  nonSpecSources,
   readRepoFile,
   repoRoot,
 } from '../../fixtures/repo.js';
 
+/** The text of a `## ` section, up to the next one. */
+function section(markdown: string, heading: string): string {
+  const start = markdown.split(new RegExp(`^## ${heading}$`, 'm'))[1];
+  return start?.split(/^## /m)[0] ?? '';
+}
+
 describe('.env.example', () => {
   const example = parseEnv(readRepoFile('.env.example'));
 
-  it('has exactly the settings schema keys', () => {
+  it('has exactly DATABASE_URL and TRADER_MODE, the settings schema keys', () => {
     const keys = Object.keys(example).sort();
 
-    expect(keys).toEqual(['ANTHROPIC_API_KEY', 'DATABASE_URL', 'TRADER_MODE']);
+    expect(keys).toEqual(['DATABASE_URL', 'TRADER_MODE']);
     expect(keys).toEqual(Object.keys(settingsSchema.shape).sort());
   });
 
-  it('sets the paper mode and leaves the key empty', () => {
+  it('sets the paper mode', () => {
     expect(example.TRADER_MODE).toBe('paper');
-    expect(example.ANTHROPIC_API_KEY).toBe('');
   });
 
-  it('passes parseSettings once a fixture key is filled in', () => {
-    const filled = { ...example, ANTHROPIC_API_KEY: FIXTURE_API_KEY };
+  it('passes parseSettings as it is, with nothing filled in', () => {
+    expect(parseSettings(example)).toEqual(example);
+  });
 
-    expect(parseSettings(filled).TRADER_MODE).toBe('paper');
+  it('keeps the compose database URL', () => {
+    expect(example.DATABASE_URL).toBe(
+      'postgresql://trader:local-dev-only@127.0.0.1:55432/trader',
+    );
+  });
+});
+
+describe('ANTHROPIC_API_KEY is gone (D9)', () => {
+  it.each(['docker-compose.yml', '.env.example'])(
+    '%s does not name it',
+    (path) => {
+      expect(readRepoFile(path)).not.toContain('ANTHROPIC_API_KEY');
+    },
+  );
+
+  it('the Current state section of progress.md does not name it', () => {
+    const current = section(readRepoFile('progress.md'), 'Current state');
+
+    expect(current).not.toBe('');
+    expect(current).not.toContain('ANTHROPIC_API_KEY');
+  });
+
+  it('only src/config/logging.ts names it, as a redact key path', () => {
+    const files = nonSpecSources()
+      .filter(({ text }) => text.includes('ANTHROPIC_API_KEY'))
+      .map(({ path }) => path);
+
+    expect(files).toEqual(['src/config/logging.ts']);
   });
 });
 
 describe('progress.md', () => {
   const progress = readRepoFile('progress.md');
-  const next = progress.split(/^## Next$/m)[1]?.split(/^## /m)[0] ?? '';
+  const next = section(progress, 'Next');
 
-  it('marks S0a and S0b done', () => {
+  it('marks S0a, S0b and S0c done', () => {
     expect(progress).toMatch(/^- \[x\] S0a /m);
     expect(progress).toMatch(/^- \[x\] S0b /m);
+    expect(progress).toMatch(/^- \[x\] S0c /m);
   });
 
-  it('names S0c as next', () => {
-    expect(next).toMatch(/^- S0c /m);
-    expect(progress).not.toMatch(/^- \[x\] S0c /m);
-  });
-
-  it('says S0c and S0d remain open under S0', () => {
-    expect(next).toContain('S0c and S0d remain open under S0');
+  it('names S0d as next', () => {
+    expect(next).toMatch(/^- S0d /m);
     expect(progress).not.toMatch(/^- \[x\] S0d /m);
+  });
+
+  it('says S0d remains open under S0', () => {
+    expect(next).toContain('S0d remains open under S0');
+  });
+
+  it('mentions the value-based scrub in Current state', () => {
+    const current = section(progress, 'Current state');
+
+    expect(current).toMatch(/scrubbed by value/);
+  });
+
+  it('records that .env.example has two keys', () => {
+    expect(progress).toContain('`.env.example` has two keys');
+    expect(progress).not.toContain('`.env.example` has three keys');
   });
 
   it.each([

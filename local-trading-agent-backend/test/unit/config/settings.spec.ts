@@ -1,9 +1,16 @@
+import { inspect } from 'node:util';
 import {
   parseSettings,
   SettingsError,
+  settingsSchema,
   type Settings,
 } from '../../../src/config/settings.js';
-import { fixtureEnv } from '../../fixtures/env.js';
+import {
+  FIXTURE_API_KEY,
+  FIXTURE_DB_PASSWORD,
+  fixtureEnv,
+  UNPARSEABLE_DATABASE_URLS,
+} from '../../fixtures/env.js';
 import { listAppFiles, readAppFile } from '../../fixtures/repo.js';
 
 type Env = Record<string, string | undefined>;
@@ -18,27 +25,37 @@ function invalidKeysFor(env: Env): readonly string[] {
   throw new Error('parseSettings accepted invalid input');
 }
 
-function without(key: keyof typeof fixtureEnv): Env {
+function without(key: string): Env {
   const env: Env = { ...fixtureEnv };
   delete env[key];
   return env;
 }
 
 describe('parseSettings: valid input', () => {
-  it('returns exactly the three keys', () => {
+  it('returns exactly DATABASE_URL and TRADER_MODE', () => {
     const settings = parseSettings(fixtureEnv);
 
     expect(Object.keys(settings).sort()).toEqual([
-      'ANTHROPIC_API_KEY',
+      'DATABASE_URL',
+      'TRADER_MODE',
+    ]);
+    expect(Object.keys(settingsSchema.shape).sort()).toEqual([
       'DATABASE_URL',
       'TRADER_MODE',
     ]);
     expect(settings).toEqual(fixtureEnv);
   });
 
+  it('types the settings as exactly the two keys', () => {
+    expectTypeOf<keyof Settings>().toEqualTypeOf<
+      'DATABASE_URL' | 'TRADER_MODE'
+    >();
+  });
+
   it('drops every other variable', () => {
     const settings = parseSettings({
       ...fixtureEnv,
+      ANTHROPIC_API_KEY: FIXTURE_API_KEY,
       BINANCE_API_KEY: 'fixture-binance-key',
       HOME: '/home/fixture',
       PORT: '3000',
@@ -77,27 +94,38 @@ describe('parseSettings: TRADER_MODE', () => {
   });
 });
 
-describe('parseSettings: ANTHROPIC_API_KEY', () => {
-  it('rejects unset', () => {
-    expect(invalidKeysFor(without('ANTHROPIC_API_KEY'))).toEqual([
-      'ANTHROPIC_API_KEY',
-    ]);
+describe('parseSettings: ANTHROPIC_API_KEY is not a setting (D9)', () => {
+  const expected = parseSettings(fixtureEnv);
+
+  it.each([
+    ['unset', without('ANTHROPIC_API_KEY')],
+    ['empty', { ...fixtureEnv, ANTHROPIC_API_KEY: '' }],
+    ['whitespace-only', { ...fixtureEnv, ANTHROPIC_API_KEY: '   \t\n' }],
+    ['a sentinel', { ...fixtureEnv, ANTHROPIC_API_KEY: FIXTURE_API_KEY }],
+  ])('succeeds and drops it when it is %s', (_, env) => {
+    const settings = parseSettings(env);
+
+    expect(settings).toEqual(expected);
+    expect(settings).not.toHaveProperty('ANTHROPIC_API_KEY');
+    expect(JSON.stringify(settings)).not.toContain(FIXTURE_API_KEY);
   });
 
-  it.each(['', ' ', '   \t\n'])('rejects blank value %j', (key) => {
-    expect(invalidKeysFor({ ...fixtureEnv, ANTHROPIC_API_KEY: key })).toEqual([
-      'ANTHROPIC_API_KEY',
-    ]);
+  it('never reads it', () => {
+    const reads: string[] = [];
+    const env = new Proxy<Env>(
+      { ...fixtureEnv, ANTHROPIC_API_KEY: FIXTURE_API_KEY },
+      {
+        get(target, key, receiver) {
+          reads.push(String(key));
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      },
+    );
+
+    parseSettings(env);
+
+    expect(reads).not.toContain('ANTHROPIC_API_KEY');
   });
-
-  it.each(['x', 'any-opaque-value', 'no format check at all'])(
-    'applies no format or prefix check to %j',
-    (key) => {
-      const env = { ...fixtureEnv, ANTHROPIC_API_KEY: key };
-
-      expect(parseSettings(env).ANTHROPIC_API_KEY).toBe(key);
-    },
-  );
 });
 
 describe('parseSettings: DATABASE_URL', () => {
@@ -178,16 +206,13 @@ describe('parseSettings: errors never carry values', () => {
   });
 
   it('names every invalid key in the message', () => {
+    // A blank ANTHROPIC_API_KEY is no longer an error (D9), so it is not named.
     const error = caught({ ANTHROPIC_API_KEY: ' ', DATABASE_URL: MODE });
 
-    expect(error.message).toContain('ANTHROPIC_API_KEY');
     expect(error.message).toContain('DATABASE_URL');
     expect(error.message).toContain('TRADER_MODE');
-    expect(error.invalidKeys).toEqual([
-      'ANTHROPIC_API_KEY',
-      'DATABASE_URL',
-      'TRADER_MODE',
-    ]);
+    expect(error.message).not.toContain('ANTHROPIC_API_KEY');
+    expect(error.invalidKeys).toEqual(['DATABASE_URL', 'TRADER_MODE']);
   });
 
   it('does not name a key that is valid', () => {
@@ -196,6 +221,55 @@ describe('parseSettings: errors never carry values', () => {
     expect(error.message).not.toContain('ANTHROPIC_API_KEY');
     expect(error.message).not.toContain('DATABASE_URL');
   });
+});
+
+describe('parseSettings: unparseable DATABASE_URL', () => {
+  // Node's ERR_INVALID_URL carries the whole URL in its `input` property, and
+  // Node's printer for uncaught errors shows it. zod parses with `new URL`, and
+  // parseSettings must discard that error along with zod's own.
+  function caught(url: string): SettingsError {
+    try {
+      parseSettings({ ...fixtureEnv, DATABASE_URL: url });
+    } catch (error) {
+      if (error instanceof SettingsError) return error;
+      throw error;
+    }
+    throw new Error('parseSettings accepted an unparseable URL');
+  }
+
+  it.each(UNPARSEABLE_DATABASE_URLS)('%s makes new URL throw', (_, url) => {
+    expect(() => new URL(url)).toThrow(
+      expect.objectContaining({ code: 'ERR_INVALID_URL', input: url }),
+    );
+  });
+
+  it.each(UNPARSEABLE_DATABASE_URLS)(
+    '%s: throws a SettingsError that names only DATABASE_URL',
+    (_, url) => {
+      const error = caught(url);
+
+      expect(error.invalidKeys).toEqual(['DATABASE_URL']);
+      expect(error.cause).toBeUndefined();
+      expect(error).not.toHaveProperty('input');
+    },
+  );
+
+  it.each(UNPARSEABLE_DATABASE_URLS)(
+    '%s: keeps the password out of every error surface',
+    (_, url) => {
+      const error = caught(url);
+      const surfaces = [
+        error.message,
+        error.stack ?? '',
+        JSON.stringify(error),
+        inspect(error, { showHidden: true, depth: null }),
+      ];
+
+      for (const text of surfaces) {
+        expect(text).not.toContain(FIXTURE_DB_PASSWORD);
+      }
+    },
+  );
 });
 
 describe('parseSettings: purity', () => {
