@@ -230,7 +230,8 @@ describe('a failed connect at boot prints no password', () => {
         });
 
         expectLoudFailure(result, url);
-        expect(result.stderr).toMatch(/Connection terminated/);
+        // A socket closed at once reads as a reset or as an early end.
+        expect(result.stderr).toMatch(/ECONNRESET|Connection terminated/);
         expect(listener.connections()).toBe(1);
       } finally {
         await listener.close();
