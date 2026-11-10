@@ -29,6 +29,18 @@ describe('parseYaml', () => {
     });
   });
 
+  it('reads single- and double-quoted keys', () => {
+    const text = [
+      'overrides:',
+      "  '@scope/parent>child': ^1.2.3",
+      '  "other>child": 2.0.0',
+    ].join('\n');
+
+    expect(parseYaml(text)).toEqual({
+      overrides: { '@scope/parent>child': '^1.2.3', 'other>child': '2.0.0' },
+    });
+  });
+
   it.each([
     ['a flow list', 'ports: ["1:2"]'],
     ['a flow map', 'environment: { A: b }'],
@@ -41,6 +53,9 @@ describe('parseYaml', () => {
     ['a duplicate key', 'a: 1\na: 2'],
     ['a tab indent', 'a:\n\tb: 1'],
     ['an inline comment', 'a: b # c'],
+    ['a quoted key with an escape', "'a\\'b': 1"],
+    ['an unclosed quoted key', "'a: 1"],
+    ['a duplicate quoted key', "a: 1\n'a': 2"],
     ['a stray indent', 'a: 1\n  b: 2'],
   ])('refuses %s', (_, text) => {
     expect(() => parseYaml(text)).toThrow();

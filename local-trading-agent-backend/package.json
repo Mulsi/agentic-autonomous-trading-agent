@@ -13,7 +13,6 @@
     "build": "pnpm typecheck && nest build",
     "db:generate": "DOTENV_CONFIG_PATH=/dev/null drizzle-kit generate",
     "db:migrate": "DOTENV_CONFIG_PATH=/dev/null drizzle-kit migrate",
-    "deploy": "nest deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start --env-file ../.env",
     "start:dev": "nest start --watch --env-file ../.env",
@@ -43,7 +42,6 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@nestjs/cli": "^12.0.0",
-    "@nestjs/mau": "^0.2.6",
     "@nestjs/schematics": "^12.0.0",
     "@nestjs/testing": "^12.0.1",
     "@types/node": "^24.0.0",
@@ -52,9 +50,10 @@
     "drizzle-kit": "^0.31.11",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
+    "fast-check": "^4.10.2",
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
-    "typescript": "^6.0.2",
+    "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1",
     "vite": "^8.0.0",
     "vitest": "^4.1.2"

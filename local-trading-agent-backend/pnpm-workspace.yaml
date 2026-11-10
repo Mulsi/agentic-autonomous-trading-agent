@@ -2,3 +2,10 @@
 # checks its platform binary; drizzle-kit runs without it.
 allowBuilds:
   esbuild: false
+# GHSA-67mh-4wv8-2f99: esbuild before 0.25.0 lets any website read the
+# responses of its dev server. Through @esbuild-kit/core-utils, drizzle-kit pulls
+# in esbuild 0.18.20. This moves that one copy to the range drizzle-kit itself
+# uses, so no new esbuild version enters the tree. It is scoped to the parent:
+# tsx's and vite's esbuild do not move.
+overrides:
+  '@esbuild-kit/core-utils>esbuild': ^0.25.4
