@@ -68,6 +68,29 @@
       "reason": "human approved: protected paths (.env.example, src/config/) and criterion 30",
       "builder": "a8faac51cbc4f93dd",
       "updatedAt": "2026-11-10T10:08:47Z"
+    },
+    {
+      "id": "004-dependency-cleanup",
+      "title": "S0d Dependency cleanup",
+      "branch": "factory/004-dependency-cleanup",
+      "stage": "merged",
+      "round": 1,
+      "maxRounds": 2,
+      "rounds": [
+        {
+          "reviews": {
+            "security": "PASS",
+            "risk": "PASS",
+            "quant": "PASS",
+            "code": "PASS"
+          }
+        }
+      ],
+      "gate": "PASS",
+      "needsHuman": false,
+      "reason": "",
+      "builder": "a277f5b3aca75c9eb",
+      "updatedAt": "2026-11-10T14:59:14Z"
     }
   ]
 }
