@@ -5,6 +5,14 @@ import { z } from 'zod';
 export const settingsSchema = z.object({
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/, hostname: /./ }),
   TRADER_MODE: z.literal('paper'),
+  // The identity marker this database is expected to carry (src/db/identity.ts).
+  // Optional and not a secret. Unset, empty and whitespace-only all mean "not
+  // configured"; any other string is kept as written and compared exactly, so
+  // this key adds no way for the boot to fail.
+  DATABASE_IDENTITY: z
+    .string()
+    .transform((value) => (value.trim() === '' ? undefined : value))
+    .optional(),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;

@@ -1,9 +1,11 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { LoggerModule } from 'nestjs-pino';
 import { AppModule } from '../../../src/app.module.js';
 import { ConfigModule } from '../../../src/config/config.module.js';
-import { LoggerModule } from 'nestjs-pino';
+import { DbModule } from '../../../src/db/db.module.js';
+import * as schemaModule from '../../../src/db/schema.js';
 import {
   appRoot,
   nonSpecSources,
@@ -82,12 +84,17 @@ describe('drizzle.config.ts', () => {
 describe('src/db/schema.ts', () => {
   const schema = readAppFile('src/db/schema.ts');
 
-  it('exists and says tables arrive with their milestone', () => {
-    expect(schema).toMatch(/^\/\/ .*milestone.*§7/m);
+  it('says trading tables arrive with their milestone', () => {
+    expect(schema).toMatch(/^\/\/ .*milestone.*\n?.*§7/m);
+  });
+
+  it('declares exactly one table, the identity marker', () => {
+    expect(schema.match(/\bpgTable\(/g)).toHaveLength(1);
+    expect(schema).toMatch(/pgTable\(\s*'database_identity'/);
+    expect(Object.keys(schemaModule)).toEqual(['databaseIdentity']);
   });
 
   it.each([
-    'pgTable',
     'pgEnum',
     'pgSchema',
     'pgView',
@@ -99,8 +106,13 @@ describe('src/db/schema.ts', () => {
     expect(schema).not.toContain(needle);
   });
 
-  it('imports nothing', () => {
-    expect(schema).not.toMatch(/\bimport\b|\brequire\(/);
+  it('imports only drizzle-orm and drizzle-orm/pg-core', () => {
+    const imports = [...schema.matchAll(/from\s+'([^']+)'/g)].map(
+      (match) => match[1],
+    );
+
+    expect(imports.sort()).toEqual(['drizzle-orm', 'drizzle-orm/pg-core']);
+    expect(schema).not.toMatch(/\brequire\(/);
   });
 });
 
@@ -111,25 +123,45 @@ describe('src/db/migrations', () => {
       entries: z.array(z.object({ idx: z.number(), tag: z.string() })),
     })
     .parse(JSON.parse(readAppFile(`${MIGRATIONS}/meta/_journal.json`)));
-  const sqlFiles = readdirSync(join(appRoot, MIGRATIONS)).filter((name) =>
-    name.endsWith('.sql'),
+  const sqlFiles = readdirSync(join(appRoot, MIGRATIONS))
+    .filter((name) => name.endsWith('.sql'))
+    .sort();
+  const sql = new Map(
+    sqlFiles.map((name) => [name, readAppFile(`${MIGRATIONS}/${name}`)]),
   );
+  const allSql = [...sql.values()].join('\n');
+  /** Every match of `pattern` across all files, as [file, capture]. */
+  const across = (pattern: RegExp): [string, string][] =>
+    [...sql].flatMap(([name, text]) =>
+      [...text.matchAll(pattern)].map((match): [string, string] => [
+        name,
+        match[1] ?? '',
+      ]),
+    );
 
-  it('holds exactly one .sql file', () => {
-    expect(sqlFiles).toHaveLength(1);
+  it('has one journal entry per .sql file, in order, each with a snapshot', () => {
+    expect(journal.entries.map((entry) => entry.idx)).toEqual(
+      journal.entries.map((_, index) => index),
+    );
+    expect(journal.entries.map((entry) => `${entry.tag}.sql`)).toEqual(
+      sqlFiles,
+    );
+    for (const [index, name] of sqlFiles.entries()) {
+      expect(name.startsWith(String(index).padStart(4, '0') + '_')).toBe(true);
+      const snapshot = `meta/${name.slice(0, 4)}_snapshot.json`;
+      expect(existsSync(join(appRoot, MIGRATIONS, snapshot)), snapshot).toBe(
+        true,
+      );
+    }
   });
 
-  it('has one journal entry naming that file, with a snapshot', () => {
-    const [entry] = journal.entries;
-
-    expect(journal.entries).toHaveLength(1);
-    expect(`${entry?.tag}.sql`).toBe(sqlFiles[0]);
-    expect(
-      existsSync(join(appRoot, MIGRATIONS, 'meta/0000_snapshot.json')),
-    ).toBe(true);
+  it('keeps 0000_init.sql as the comment drizzle-kit wrote', () => {
+    expect(sql.get('0000_init.sql')).toBe(
+      '-- Custom SQL migration file, put your code below! --',
+    );
   });
 
-  it('has an empty snapshot', () => {
+  it('has an empty 0000 snapshot', () => {
     const snapshot = JSON.parse(
       readAppFile(`${MIGRATIONS}/meta/0000_snapshot.json`),
     ) as Record<string, unknown>;
@@ -148,11 +180,70 @@ describe('src/db/migrations', () => {
     'DELETE',
     'GRANT',
     'TRUNCATE',
-  ])('the migration has no %s', (keyword) => {
-    const sql = readAppFile(`${MIGRATIONS}/${sqlFiles[0]}`);
-
-    expect(sql).not.toMatch(new RegExp(`\\b${keyword}\\b`, 'i'));
+  ])('0000_init.sql has no %s', (keyword) => {
+    expect(sql.get('0000_init.sql')).not.toMatch(
+      new RegExp(`\\b${keyword}\\b`, 'i'),
+    );
   });
+
+  it('creates only the marker table', () => {
+    expect(across(/\bCREATE\s+TABLE\s+"?(\w+)"?/gi)).toEqual([
+      ['0001_database_identity.sql', 'database_identity'],
+    ]);
+    expect(allSql.match(/\bCREATE\s+TABLE\b/gi)).toHaveLength(1);
+  });
+
+  it('names only research_reader in CREATE ROLE and ALTER ROLE', () => {
+    const roles = across(/\b(?:CREATE|ALTER)\s+ROLE\s+"?(\w+)"?/gi);
+
+    expect(roles.length).toBeGreaterThan(0);
+    expect(new Set(roles.map(([, role]) => role))).toEqual(
+      new Set(['research_reader']),
+    );
+    expect(allSql.match(/\b(?:CREATE|ALTER)\s+ROLE\b/gi)).toHaveLength(
+      roles.length,
+    );
+    expect(allSql).not.toMatch(/\b(?:CREATE|ALTER)\s+(USER|GROUP)\b/i);
+  });
+
+  it('grants only to research_reader', () => {
+    const grants = across(/\bGRANT\b[^;']*?\bTO\s+"?(\w+)"?/gi);
+
+    expect(grants.length).toBe(allSql.match(/\bGRANT\b/gi)?.length);
+    expect(new Set(grants.map(([, role]) => role))).toEqual(
+      new Set(['research_reader']),
+    );
+  });
+
+  it('grants research_reader nothing beyond CONNECT, USAGE and SELECT', () => {
+    const privileges = across(/\bGRANT\s+([A-Z, ]+?)\s+ON\b/gi).map(
+      ([, list]) => list.trim().toUpperCase(),
+    );
+
+    expect(new Set(privileges)).toEqual(
+      new Set(['CONNECT', 'USAGE', 'SELECT']),
+    );
+  });
+
+  it('inserts only into the marker table', () => {
+    expect(across(/\bINSERT\s+INTO\s+"?(\w+)"?/gi)).toEqual([
+      ['0002_database_identity_marker.sql', 'database_identity'],
+    ]);
+    expect(allSql.match(/\bINSERT\b/gi)).toHaveLength(1);
+  });
+
+  it('generates the marker with gen_random_uuid()', () => {
+    expect(sql.get('0002_database_identity_marker.sql')).toMatch(
+      /INSERT INTO "database_identity" \("marker"\) VALUES \(gen_random_uuid\(\)\);/,
+    );
+  });
+
+  it.each(['DROP', 'TRUNCATE', 'DELETE', 'UPDATE'])(
+    'no migration contains %s',
+    (keyword) => {
+      expect(allSql).not.toMatch(new RegExp(`\\b${keyword}\\b`, 'i'));
+    },
+  );
 });
 
 describe('database scripts', () => {
@@ -189,7 +280,9 @@ describe('database scripts', () => {
   });
 });
 
-describe('the app stays unconnected', () => {
+describe('only src/db/client.ts connects', () => {
+  const CLIENT = 'src/db/client.ts';
+
   it.each([
     /from\s+['"]pg['"]/,
     /require\(\s*['"]pg['"]\s*\)/,
@@ -198,15 +291,48 @@ describe('the app stays unconnected', () => {
     /new\s+Pool\(/,
     /new\s+Client\(/,
     /\bdrizzle\(/,
-  ])('no non-spec source under src/ matches %s', (pattern) => {
+  ])('no non-spec source under src/ but client.ts matches %s', (pattern) => {
     const offenders = nonSpecSources()
-      .filter(({ text }) => pattern.test(text))
+      .filter(({ path, text }) => path !== CLIENT && pattern.test(text))
       .map(({ path }) => path);
 
     expect(offenders).toEqual([]);
   });
 
-  it('AppModule imports only ConfigModule and LoggerModule', () => {
+  it('client.ts imports pg and the node-postgres driver, and builds the pool', () => {
+    const client = readAppFile(CLIENT);
+
+    expect(client).toMatch(/from\s+'pg'/);
+    expect(client).toMatch(/from\s+'drizzle-orm\/node-postgres'/);
+    expect(client).toMatch(/new\s+Pool\(/);
+    expect(client).toMatch(/\bdrizzle\(/);
+  });
+
+  it('no non-spec source under src/ contains setTypeParser', () => {
+    const offenders = nonSpecSources()
+      .filter(({ text }) => text.includes('setTypeParser'))
+      .map(({ path }) => path);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('new URL( still appears only in src/config/secrets.ts', () => {
+    const files = nonSpecSources()
+      .filter(({ text }) => text.includes('new URL('))
+      .map(({ path }) => path);
+
+    expect(files).toEqual(['src/config/secrets.ts']);
+  });
+
+  it('process.env still appears only in src/config/config.module.ts', () => {
+    const files = nonSpecSources()
+      .filter(({ text }) => text.includes('process.env'))
+      .map(({ path }) => path);
+
+    expect(files).toEqual(['src/config/config.module.ts']);
+  });
+
+  it('AppModule imports ConfigModule, LoggerModule and DbModule', () => {
     const imports = Reflect.getMetadata('imports', AppModule) as unknown[];
     const modules = imports.map((entry) =>
       typeof entry === 'object' && entry !== null && 'module' in entry
@@ -214,6 +340,56 @@ describe('the app stays unconnected', () => {
         : entry,
     );
 
-    expect(modules).toEqual([ConfigModule, LoggerModule]);
+    expect(modules).toEqual([ConfigModule, LoggerModule, DbModule]);
   });
+});
+
+describe('the app never writes the marker (S0e)', () => {
+  const sources = nonSpecSources().filter(
+    ({ path }) => !path.startsWith(`${MIGRATIONS}/`),
+  );
+
+  it.each([
+    /drizzle-orm\/[\w-]+\/migrator/,
+    /drizzle-orm\/migrator/,
+    /\bmigrate\(/,
+  ])('no non-spec source outside the migrations matches %s', (pattern) => {
+    const offenders = sources
+      .filter(({ text }) => pattern.test(text))
+      .map(({ path }) => path);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it.each(['.insert(', '.update(', '.delete('])(
+    'no non-spec source outside the migrations contains %s',
+    (needle) => {
+      const offenders = sources
+        .filter(({ text }) => text.includes(needle))
+        .map(({ path }) => path);
+
+      expect(offenders).toEqual([]);
+    },
+  );
+
+  it.each([
+    'INSERT',
+    'UPDATE',
+    'DELETE',
+    'TRUNCATE',
+    'CREATE',
+    'ALTER',
+    'DROP',
+    'GRANT',
+  ])(
+    'no non-spec source outside the migrations contains the word %s',
+    (word) => {
+      const pattern = new RegExp(`\\b${word}\\b`);
+      const offenders = sources
+        .filter(({ text }) => pattern.test(text))
+        .map(({ path }) => path);
+
+      expect(offenders).toEqual([]);
+    },
+  );
 });

@@ -99,6 +99,24 @@ describe('research/README.md', () => {
   it('cites D13', () => {
     expect(readme).toContain('D13');
   });
+
+  it('names the read-only role research_reader and the URL research uses', () => {
+    expect(readme).toContain('`research_reader`');
+    expect(readme).toContain('127.0.0.1:55432/trader');
+    expect(readme).toMatch(
+      /postgresql:\/\/research_reader:[^@\s`]+@127\.0\.0\.1:55432\/trader/,
+    );
+  });
+
+  it('says research connects only as research_reader, never as trader', () => {
+    expect(readme).toMatch(/connects only as `research_reader`/i);
+    expect(readme).toMatch(/never as `trader`/i);
+  });
+
+  it('no longer says the first research task adds the role', () => {
+    expect(readme).not.toMatch(/along with a read-only database role/i);
+    expect(readme).not.toMatch(/first research task adds[^.]*role/i);
+  });
 });
 
 describe('Python stays inside research/', () => {

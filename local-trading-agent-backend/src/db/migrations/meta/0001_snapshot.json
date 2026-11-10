@@ -1,0 +1,57 @@
+{
+  "id": "18be6c09-129f-438c-95c1-50a0c979eec5",
+  "prevId": "d6c8baaa-6d27-4a3c-b41b-a29fbf5d207c",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.database_identity": {
+      "name": "database_identity",
+      "schema": "",
+      "columns": {
+        "singleton": {
+          "name": "singleton",
+          "type": "boolean",
+          "primaryKey": true,
+          "notNull": true,
+          "default": true
+        },
+        "marker": {
+          "name": "marker",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "database_identity_singleton": {
+          "name": "database_identity_singleton",
+          "value": "\"database_identity\".\"singleton\""
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

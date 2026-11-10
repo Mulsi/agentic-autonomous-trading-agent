@@ -8,6 +8,27 @@
       "when": 1794241128437,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794332031523,
+      "tag": "0001_database_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794332036537,
+      "tag": "0002_database_identity_marker",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794332036867,
+      "tag": "0003_research_reader",
+      "breakpoints": true
     }
   ]
 }

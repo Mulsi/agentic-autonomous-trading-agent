@@ -1,4 +1,6 @@
 import { inspect } from 'node:util';
+import fc from 'fast-check';
+import { secretValues } from '../../../src/config/secrets.js';
 import {
   parseSettings,
   SettingsError,
@@ -32,23 +34,27 @@ function without(key: string): Env {
 }
 
 describe('parseSettings: valid input', () => {
-  it('returns exactly DATABASE_URL and TRADER_MODE', () => {
+  it('has exactly the keys DATABASE_URL, TRADER_MODE and DATABASE_IDENTITY', () => {
     const settings = parseSettings(fixtureEnv);
 
-    expect(Object.keys(settings).sort()).toEqual([
+    expect(Object.keys(settingsSchema.shape).sort()).toEqual([
+      'DATABASE_IDENTITY',
       'DATABASE_URL',
       'TRADER_MODE',
     ]);
-    expect(Object.keys(settingsSchema.shape).sort()).toEqual([
+    expect(Object.keys(settings).sort()).toEqual([
       'DATABASE_URL',
       'TRADER_MODE',
     ]);
     expect(settings).toEqual(fixtureEnv);
   });
 
-  it('types the settings as exactly the two keys', () => {
+  it('types the settings as exactly the three keys', () => {
     expectTypeOf<keyof Settings>().toEqualTypeOf<
-      'DATABASE_URL' | 'TRADER_MODE'
+      'DATABASE_URL' | 'TRADER_MODE' | 'DATABASE_IDENTITY'
+    >();
+    expectTypeOf<Settings['DATABASE_IDENTITY']>().toEqualTypeOf<
+      string | undefined
     >();
   });
 
@@ -155,6 +161,86 @@ describe('parseSettings: DATABASE_URL', () => {
     expect(invalidKeysFor({ ...fixtureEnv, DATABASE_URL: url })).toEqual([
       'DATABASE_URL',
     ]);
+  });
+});
+
+describe('parseSettings: DATABASE_IDENTITY', () => {
+  it.each([
+    ['unset', without('DATABASE_IDENTITY')],
+    ['empty', { ...fixtureEnv, DATABASE_IDENTITY: '' }],
+    ['whitespace-only', { ...fixtureEnv, DATABASE_IDENTITY: ' \t\n\r ' }],
+    ['a no-break space', { ...fixtureEnv, DATABASE_IDENTITY: ' ' }],
+  ])('is not configured when it is %s', (_, env) => {
+    const settings = parseSettings(env);
+
+    expect(settings.DATABASE_IDENTITY).toBeUndefined();
+    expect(settings.DATABASE_URL).toBe(fixtureEnv.DATABASE_URL);
+  });
+
+  it.each([
+    'f3b1c0de-1234-4abc-8def-0123456789ab',
+    'F3B1C0DE-1234-4ABC-8DEF-0123456789AB',
+    ' f3b1c0de-1234-4abc-8def-0123456789ab ',
+    'f3b1c0de',
+    'not a uuid at all',
+    'x',
+  ])('keeps %j exactly as written', (value) => {
+    const settings = parseSettings({ ...fixtureEnv, DATABASE_IDENTITY: value });
+
+    expect(settings.DATABASE_IDENTITY).toBe(value);
+  });
+
+  it('no value of DATABASE_IDENTITY alone makes parseSettings throw', () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          fc.string({ unit: 'binary', maxLength: 80 }),
+          fc.string({ unit: 'grapheme', maxLength: 80 }),
+          fc.uuid(),
+          fc.constantFrom('', ' ', '\t', ' ', ' ', '\u0000'),
+        ),
+        (value) => {
+          const settings = parseSettings({
+            ...fixtureEnv,
+            DATABASE_IDENTITY: value,
+          });
+
+          expect(settings.DATABASE_IDENTITY).toBe(
+            value.trim() === '' ? undefined : value,
+          );
+        },
+      ),
+      { numRuns: 1_000 },
+    );
+  });
+
+  it('a SettingsError for another key names keys only, never this value', () => {
+    const identity = 'identity-sentinel-0d4e';
+
+    let error: unknown;
+    try {
+      parseSettings({
+        ...fixtureEnv,
+        TRADER_MODE: 'live',
+        DATABASE_IDENTITY: identity,
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(SettingsError);
+    expect((error as SettingsError).invalidKeys).toEqual(['TRADER_MODE']);
+    expect(inspect(error, { showHidden: true })).not.toContain(identity);
+  });
+
+  it('is not a secret: it adds no value to secretValues', () => {
+    const plain = parseSettings(fixtureEnv);
+    const withIdentity = parseSettings({
+      ...fixtureEnv,
+      DATABASE_IDENTITY: 'f3b1c0de-1234-4abc-8def-0123456789ab',
+    });
+
+    expect(secretValues(withIdentity)).toEqual(secretValues(plain));
   });
 });
 

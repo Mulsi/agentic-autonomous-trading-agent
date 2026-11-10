@@ -1,20 +1,42 @@
 import { createServer, type AddressInfo } from 'node:net';
 import { Client } from 'pg';
+import { z } from 'zod';
 import {
   composeUrl,
   createTestDatabase,
   dropTestDatabase,
   newTestDatabaseName,
   runDbMigrate,
+  testDatabaseUrl,
+  userObjects,
+  withClient,
   withTestDatabase,
   type RunResult,
 } from '../fixtures/db.js';
+import { readAppFile } from '../fixtures/repo.js';
 
 // Runs against the compose Postgres from `make db-up`. Every database here is
 // a throwaway `trader_test_*` one, created and dropped through the guarded
 // helpers in test/fixtures/db.ts.
 
 const WRONG_PASSWORD = 'wrong-password-sentinel-3c9e';
+
+/** The migrations the committed journal lists. */
+const JOURNAL_ENTRIES = z
+  .object({ entries: z.array(z.object({ tag: z.string() })) })
+  .parse(JSON.parse(readAppFile('src/db/migrations/meta/_journal.json')))
+  .entries.length;
+
+/**
+ * The marker table and what Postgres makes for it: its row type, its array
+ * type and the primary-key index. Nothing else outside `drizzle`.
+ */
+const MARKER_OBJECTS = [
+  { schema: 'public', name: '_database_identity', kind: 'type' },
+  { schema: 'public', name: 'database_identity', kind: 'relation r' },
+  { schema: 'public', name: 'database_identity', kind: 'type' },
+  { schema: 'public', name: 'database_identity_pkey', kind: 'relation i' },
+];
 
 let admin: Client;
 
@@ -27,63 +49,15 @@ afterAll(async () => {
   await admin.end();
 });
 
-async function withClient<T>(
-  database: string,
-  body: (client: Client) => Promise<T>,
-): Promise<T> {
-  const client = new Client({ connectionString: composeUrl(database) });
-  await client.connect();
-  try {
-    return await body(client);
-  } finally {
-    await client.end();
-  }
-}
-
 interface MigrationRow {
   hash: string;
   created_at: string;
 }
 
 function migrationRows(database: string): Promise<MigrationRow[]> {
-  return withClient(database, async (client) => {
+  return withClient(testDatabaseUrl(database), async (client) => {
     const result = await client.query<MigrationRow>(
       'SELECT hash, created_at::text AS created_at FROM drizzle.__drizzle_migrations ORDER BY id',
-    );
-    return result.rows;
-  });
-}
-
-interface DbObject {
-  schema: string;
-  name: string;
-  kind: string;
-}
-
-/**
- * Every relation (table, view, sequence, index, ...), function and type in a
- * non-system schema, leaving out the schemas named in `skip`.
- */
-function userObjects(database: string, skip: string[]): Promise<DbObject[]> {
-  return withClient(database, async (client) => {
-    const result = await client.query<DbObject>(
-      `WITH user_schemas AS (
-         SELECT oid, nspname FROM pg_namespace
-         WHERE nspname NOT IN ('pg_catalog', 'information_schema')
-           AND nspname NOT LIKE 'pg\\_toast%'
-           AND nspname NOT LIKE 'pg\\_temp\\_%'
-           AND nspname <> ALL($1::text[])
-       )
-       SELECT s.nspname AS schema, c.relname AS name, 'relation ' || c.relkind::text AS kind
-         FROM pg_class c JOIN user_schemas s ON s.oid = c.relnamespace
-       UNION ALL
-       SELECT s.nspname, p.proname, 'function'
-         FROM pg_proc p JOIN user_schemas s ON s.oid = p.pronamespace
-       UNION ALL
-       SELECT s.nspname, t.typname, 'type'
-         FROM pg_type t JOIN user_schemas s ON s.oid = t.typnamespace
-       ORDER BY 1, 2, 3`,
-      [skip],
     );
     return result.rows;
   });
@@ -129,12 +103,12 @@ describe('pnpm db:migrate on a throwaway database', () => {
     expect(first.code, output(first)).toBe(0);
   });
 
-  it("records exactly one row in drizzle's migrations table", async () => {
-    expect(await migrationRows(database)).toHaveLength(1);
+  it("records one row per journal entry in drizzle's migrations table", async () => {
+    expect(await migrationRows(database)).toHaveLength(JOURNAL_ENTRIES);
   });
 
-  it("creates nothing outside drizzle's bookkeeping schema", async () => {
-    expect(await userObjects(database, ['drizzle'])).toEqual([]);
+  it('creates nothing outside drizzle but the marker table and what Postgres makes for it', async () => {
+    expect(await userObjects(database, ['drizzle'])).toEqual(MARKER_OBJECTS);
   });
 
   it("the inventory does see drizzle's own table", async () => {
@@ -152,14 +126,16 @@ describe('pnpm db:migrate on a throwaway database', () => {
     expect(output(first)).not.toContain(decodeURIComponent(url.password));
   });
 
-  it('a second run exits 0 and leaves the same single row', async () => {
+  it('a second run exits 0 and changes nothing', async () => {
     const before = await migrationRows(database);
+    const objectsBefore = await userObjects(database, []);
 
     const second = await runDbMigrate(composeUrl(database));
 
     expect(second.code, output(second)).toBe(0);
     expect(await migrationRows(database)).toEqual(before);
-    expect(before).toHaveLength(1);
+    expect(before).toHaveLength(JOURNAL_ENTRIES);
+    expect(await userObjects(database, [])).toEqual(objectsBefore);
   });
 });
 

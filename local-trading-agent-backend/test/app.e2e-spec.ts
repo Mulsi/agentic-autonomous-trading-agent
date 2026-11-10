@@ -1,82 +1,71 @@
-import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { createServer, type AddressInfo, type Server } from 'node:net';
 import { join } from 'node:path';
+import { Client } from 'pg';
+import {
+  composeUrl,
+  createTestDatabase,
+  dropTestDatabase,
+  newTestDatabaseName,
+  runDbMigrate,
+  testDatabaseUrl,
+} from './fixtures/db.js';
 import {
   FIXTURE_API_KEY,
-  FIXTURE_DATABASE_URL,
   FIXTURE_DB_PASSWORD,
   fixtureEnv,
   UNPARSEABLE_DATABASE_URLS,
 } from './fixtures/env.js';
 import { expectClean, REDACTED } from './fixtures/logs.js';
+import {
+  countingListener,
+  EXIT_LIMIT_MS,
+  runMain,
+  runNode,
+  stdoutLines,
+  type CountingListener,
+  type MainResult as RunResult,
+} from './fixtures/main.js';
 import { appRoot } from './fixtures/repo.js';
 
-const EXIT_LIMIT_MS = 10_000;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
-interface RunResult {
-  code: number | null;
-  timedOut: boolean;
-  stdout: string;
-  stderr: string;
+// A successful boot connects, so those cases run against a migrated throwaway
+// database on the compose Postgres from `make db-up`. Its password is the
+// fixed local-development one, and it must not appear in any output either.
+const database = newTestDatabaseName();
+const DATABASE_URL = testDatabaseUrl(database);
+const LOADED_PASSWORD = new URL(DATABASE_URL).password;
+const validEnv = { DATABASE_URL, TRADER_MODE: 'paper' };
+let admin: Client;
+
+/** A URL with the fixture password, at a loopback listener's port. */
+function listenerUrl(listener: CountingListener): string {
+  return `postgresql://trader:${FIXTURE_DB_PASSWORD}@127.0.0.1:${listener.port}/trader`;
 }
 
-/** Spawns the built app. The env is explicit, so nothing real can leak in. */
-function runMain(env: Record<string, string>): Promise<RunResult> {
-  return runNode(['dist/main.js'], env);
-}
-
-/** Runs node in the app folder with an explicit env. */
-function runNode(
-  args: string[],
-  env: Record<string, string>,
-): Promise<RunResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, {
-      cwd: appRoot,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGKILL');
-    }, EXIT_LIMIT_MS);
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      resolve({ code, timedOut, stdout, stderr });
-    });
-  });
-}
-
-function stdoutLines(result: RunResult): string[] {
-  return result.stdout.split('\n').filter((line) => line.length > 0);
-}
-
-beforeAll(() => {
+beforeAll(async () => {
   if (!existsSync(join(appRoot, 'dist/main.js'))) {
     throw new Error('dist/main.js is missing. Run pnpm build first.');
   }
+  admin = new Client({ connectionString: composeUrl('postgres') });
+  await admin.connect();
+  await createTestDatabase(admin, database);
+  const migrated = await runDbMigrate(DATABASE_URL);
+  if (migrated.code !== 0) throw new Error(`migrate: ${migrated.stderr}`);
+});
+
+afterAll(async () => {
+  await dropTestDatabase(admin, database);
+  await admin.end();
 });
 
 describe('node dist/main.js with valid env', () => {
   let result: RunResult;
 
   beforeAll(async () => {
-    result = await runMain(fixtureEnv);
+    result = await runMain(validEnv);
   }, EXIT_LIMIT_MS + 5_000);
 
   it('exits 0 by itself within the limit', () => {
@@ -120,7 +109,8 @@ describe('node dist/main.js with valid env', () => {
     const output = result.stdout + result.stderr;
 
     expect(output).not.toContain(FIXTURE_API_KEY);
-    expect(output).not.toContain(FIXTURE_DB_PASSWORD);
+    expect(output).not.toContain(LOADED_PASSWORD);
+    expect(output).not.toContain(DATABASE_URL);
   });
 });
 
@@ -129,13 +119,17 @@ describe('node dist/main.js and ANTHROPIC_API_KEY (D9)', () => {
 
   beforeAll(async () => {
     result = await runMain({
-      ...fixtureEnv,
+      ...validEnv,
       ANTHROPIC_API_KEY: FIXTURE_API_KEY,
     });
   }, EXIT_LIMIT_MS + 5_000);
 
   it('the valid env holds only DATABASE_URL and TRADER_MODE', () => {
     expect(Object.keys(fixtureEnv).sort()).toEqual([
+      'DATABASE_URL',
+      'TRADER_MODE',
+    ]);
+    expect(Object.keys(validEnv).sort()).toEqual([
       'DATABASE_URL',
       'TRADER_MODE',
     ]);
@@ -152,45 +146,26 @@ describe('node dist/main.js and ANTHROPIC_API_KEY (D9)', () => {
   });
 });
 
-describe('node dist/main.js and the database', () => {
-  // A plain TCP listener stands in for Postgres and counts connections. The
-  // app has no database client until after S0c, so it must never dial out.
-  let server: Server;
-  let connections = 0;
-  let result: RunResult;
-
-  beforeAll(async () => {
-    server = createServer((socket) => {
-      connections += 1;
-      socket.destroy();
-    });
-    await new Promise<void>((resolve) =>
-      server.listen(0, '127.0.0.1', resolve),
-    );
-    const { port } = server.address() as AddressInfo;
-    const url = new URL(fixtureEnv.DATABASE_URL);
-    url.hostname = '127.0.0.1';
-    url.port = String(port);
-
-    result = await runMain({ ...fixtureEnv, DATABASE_URL: url.toString() });
-  }, EXIT_LIMIT_MS + 5_000);
-
-  afterAll(async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  });
-
-  it('boots and exits 0 without connecting', () => {
-    expect(result.timedOut).toBe(false);
-    expect(result.code).toBe(0);
-    expect(connections).toBe(0);
-  });
-});
-
 describe('node dist/main.js with invalid env', () => {
+  // A listener at the URL's host and port: settings are checked before the
+  // client connects, so it must see nothing.
+  let listener: CountingListener;
+
+  beforeEach(async () => {
+    listener = await countingListener('close-at-once');
+  });
+
+  afterEach(async () => {
+    await listener.close();
+  });
+
   it.each(['live', 'testnet', 'PAPER'])(
     'refuses TRADER_MODE=%s without leaking secrets',
     async (mode) => {
-      const result = await runMain({ ...fixtureEnv, TRADER_MODE: mode });
+      const result = await runMain({
+        DATABASE_URL: listenerUrl(listener),
+        TRADER_MODE: mode,
+      });
 
       expect(result.timedOut).toBe(false);
       expect(result.code).not.toBe(0);
@@ -198,6 +173,7 @@ describe('node dist/main.js with invalid env', () => {
       expect(result.stderr).toContain('TRADER_MODE');
       expect(result.stdout + result.stderr).not.toContain(FIXTURE_API_KEY);
       expect(result.stdout + result.stderr).not.toContain(FIXTURE_DB_PASSWORD);
+      expect(listener.connections()).toBe(0);
     },
     EXIT_LIMIT_MS + 5_000,
   );
@@ -205,12 +181,12 @@ describe('node dist/main.js with invalid env', () => {
   it(
     'refuses to start when TRADER_MODE is unset',
     async () => {
-      const { DATABASE_URL } = fixtureEnv;
-
-      const result = await runMain({ DATABASE_URL });
+      const result = await runMain({ DATABASE_URL: listenerUrl(listener) });
 
       expect(result.code).not.toBe(0);
       expect(result.code).not.toBeNull();
+      expect(result.stdout + result.stderr).not.toContain(FIXTURE_DB_PASSWORD);
+      expect(listener.connections()).toBe(0);
     },
     EXIT_LIMIT_MS + 5_000,
   );
@@ -271,7 +247,7 @@ describe('the built AppModule scrubs secret values from its logs', () => {
 
   beforeAll(async () => {
     result = await runNode(['--input-type=module', '--eval', PROBE], {
-      ...fixtureEnv,
+      ...validEnv,
     });
     // Lines that are not JSON fail the clean check below, not every test.
     lines = stdoutLines(result).flatMap((raw) => {
@@ -290,10 +266,7 @@ describe('the built AppModule scrubs secret values from its logs', () => {
   });
 
   it('writes only clean JSON lines to stdout', () => {
-    expectClean(stdoutLines(result), [
-      FIXTURE_DB_PASSWORD,
-      FIXTURE_DATABASE_URL,
-    ]);
+    expectClean(stdoutLines(result), [LOADED_PASSWORD, DATABASE_URL]);
   });
 
   it("passes Nest's buffered boot lines through the same logger", () => {

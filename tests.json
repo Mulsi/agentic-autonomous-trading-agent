@@ -3,19 +3,49 @@
     {
       "file": "local-trading-agent-backend/src/app.controller.spec.ts",
       "milestone": "S0",
-      "covers": "AppModule boots a standalone context with zero controllers in every module",
+      "covers": "AppModule boots a standalone context with zero controllers in every module (database connection substituted on the test side)",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/app.e2e-spec.ts",
       "milestone": "S0",
-      "covers": "built app exits by itself with only DATABASE_URL and TRADER_MODE, ignores ANTHROPIC_API_KEY (D9), logs JSON lines only, refuses invalid settings and unparseable DATABASE_URLs without leaking the password, the built AppModule scrubs secret values from every log line including buffered boot lines, no database connection at boot",
+      "covers": "built app on a migrated throwaway database: exits by itself, ignores ANTHROPIC_API_KEY (D9), logs JSON lines only with a UTC time and Nest boot lines through pino, one startup line with mode paper and a UUID correlationId, the loaded password in no output; refuses invalid settings and unparseable DATABASE_URLs without leaking the password, and a listener at the URL sees no connection; the built AppModule scrubs secret values from every log line including buffered boot lines",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/database-boot.e2e-spec.ts",
+      "milestone": "S0",
+      "covers": "built app against throwaway databases: exactly one identity line before the startup line (warn UNKNOWN not_configured, info VERIFIED, warn mismatch for another marker or upper case, warn missing_marker without migrations), a boot never writes (marker value and xmin unchanged, unmigrated database stays empty); a failed connect (refused, closed at once, silent until the connect timeout, wrong password, server error holding the password) exits non-zero without a signal, prints what failed, one connection only, and no password or URL, with [REDACTED] in the server error",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/db/client.db-spec.ts",
+      "milestone": "S0",
+      "covers": "connectDatabase reads the single marker of a migrated database and no table on an unmigrated one, the session runs in UTC, and a closed application context leaves no connection in pg_stat_activity",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/db/identity.db-spec.ts",
+      "milestone": "S0",
+      "covers": "identity marker after pnpm db:migrate: exactly one UUID row with a timestamptz creation time, different per database, unchanged value and xmin after a second migrate, a second row fails as trader",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/db/migrate.db-spec.ts",
       "milestone": "S0",
-      "covers": "pnpm db:migrate on a throwaway database: one migration row, no objects outside drizzle, idempotent, cleanup on failure, non-zero exits without leaking the password",
+      "covers": "pnpm db:migrate on a throwaway database: one migration row per journal entry, nothing outside drizzle but the marker table with its row and array types and primary-key index, idempotent, cleanup on failure, non-zero exits without leaking the password",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/db/research-role.db-spec.ts",
+      "milestone": "S0",
+      "covers": "research_reader: login only with no other attribute and no membership, a second database migrates with the role present; with the documented password inside BEGIN READ WRITE it reads the marker, and every write, CREATE, ALTER, DROP, TRUNCATE, CREATE ROLE and CREATE DATABASE fails with 42501; a table trader creates later is readable and not writable",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/db/round-trip.db-spec.ts",
+      "milestone": "S0",
+      "covers": "under TZ=Europe/Ljubljana through the client from src/db/client.ts: timestamptz instants across both DST changes keep getTime() through Drizzle and the raw pool, *_ms bigint keeps the number, numeric keeps the exact string, and the timestamp-without-time-zone control shifts by the local offset",
       "status": "passing"
     },
     {
@@ -39,13 +69,19 @@
     {
       "file": "local-trading-agent-backend/test/unit/config/app-logger.spec.ts",
       "milestone": "S0",
-      "covers": "AppModule parses the settings once at boot and builds its logger from them, and its root logger scrubs secret values from every line, buffered boot lines included",
+      "covers": "AppModule parses the settings once at boot and builds its logger from them, and its root logger scrubs secret values from every line, buffered boot lines included (database connection substituted on the test side)",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/config/boot-output.spec.ts",
+      "milestone": "S0",
+      "covers": "failed-boot output outside pino: printBootFailure and BootConsoleLogger scrub every secret form, exit 1, print without colour; a Nest boot that fails with an error holding the password prints [REDACTED] on both paths; ConfigModule records the secret values from its one parse; main.ts wires both printers",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/unit/config/config.module.spec.ts",
       "milestone": "S0",
-      "covers": "settings through DI with two keys, ANTHROPIC_API_KEY ignored (D9), unparseable DATABASE_URL refuses boot without the password, import needs no env, start scripts load ../.env",
+      "covers": "settings through DI, ANTHROPIC_API_KEY ignored (D9), unparseable DATABASE_URL refuses boot without the password, import needs no env, start scripts load ../.env (database connection substituted on the test side)",
       "status": "passing"
     },
     {
@@ -69,7 +105,13 @@
     {
       "file": "local-trading-agent-backend/test/unit/config/settings.spec.ts",
       "milestone": "S0",
-      "covers": "paper-only settings with exactly DATABASE_URL and TRADER_MODE, ANTHROPIC_API_KEY dropped unread (D9), no values in errors, unparseable DATABASE_URL errors carry no password",
+      "covers": "paper-only settings with exactly DATABASE_URL, TRADER_MODE and the optional DATABASE_IDENTITY (unset or blank is not configured, anything else kept exactly, no value of it alone throws, not a secret), ANTHROPIC_API_KEY dropped unread (D9), no values in errors, unparseable DATABASE_URL errors carry no password",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/db/client.spec.ts",
+      "milestone": "S0",
+      "covers": "databaseConfig: host, port, user, password and database from DATABASE_URL alone with every PG* variable set (port 5432, OS user and user-named database by default, query string ignored), no connection string or type parsers, bounded connect timeout; the client password is a scrubbed form for the S0c encoded URLs, the recorded counterexample and a 2,000-run property; importing app.module.ts with an empty env opens no connection",
       "status": "passing"
     },
     {
@@ -79,9 +121,15 @@
       "status": "passing"
     },
     {
+      "file": "local-trading-agent-backend/test/unit/db/db-module.spec.ts",
+      "milestone": "S0",
+      "covers": "DbModule through AppModule: connects once with the parsed settings, provides Drizzle and the identity result for each setting, missing or unreadable markers are UNKNOWN and the boot completes, closing the context closes the connection, a failed connect fails the boot once, refused settings never connect, the provider can be substituted on the test side",
+      "status": "passing"
+    },
+    {
       "file": "local-trading-agent-backend/test/unit/db/drizzle.spec.ts",
       "milestone": "S0",
-      "covers": "drizzle dependencies, config, empty schema and migration, db scripts, app stays unconnected",
+      "covers": "drizzle dependencies and config; schema.ts declares only the marker table; migrations: journal matches the .sql files with snapshots, 0000_init unchanged, only the marker table is created, roles and grants name only research_reader, inserts only into the marker table, nothing dropped, truncated, deleted or updated; db scripts; only src/db/client.ts connects, no setTypeParser; the app never writes the marker",
       "status": "passing"
     },
     {
@@ -91,9 +139,21 @@
       "status": "passing"
     },
     {
+      "file": "local-trading-agent-backend/test/unit/db/identity.spec.ts",
+      "milestone": "S0",
+      "covers": "identity decision for every reason (not_configured, missing_marker, mismatch including case, whitespace and prefixes, unreadable) and VERIFIED on an exact match, a property that VERIFIED means configured and equal to the single stored marker, every UNKNOWN blocks entries, exact status and reason unions, marker read failures classified, identity.ts stays pure",
+      "status": "passing"
+    },
+    {
       "file": "local-trading-agent-backend/test/unit/db/migrate-env.spec.ts",
       "milestone": "S0",
       "covers": "pnpm db:migrate ignores a .env in its working directory",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/db/schema-scan.spec.ts",
+      "milestone": "S0",
+      "covers": "column conventions: the real schema passes the metadata and source scans; fixture tables with real, doublePrecision, numeric in number or bigint mode, number-mode bigint outside *_ms, timestamp without time zone and customType each fail naming table and column; string numeric, timestamptz and bigint *_ms pass",
       "status": "passing"
     },
     {
@@ -111,7 +171,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/tooling/dependencies.spec.ts",
       "milestone": "S0",
-      "covers": "@nestjs/mau, the deploy script and the README Deployment text gone; typescript pinned with a tilde, locked on that minor and inside the locked typescript-eslint peer range; pnpm-workspace.yaml denies every install script, holds only allowBuilds and overrides, and matches the lockfile overrides; esbuild GHSA-67mh-4wv8-2f99: progress.md states the decision, and with the override only @esbuild-kit/core-utils>esbuild is overridden, no esbuild is below 0.25.0 and every esbuild is one drizzle-kit, tsx or vite uses (or, without it, the fallback is asserted); fast-check is a stable devDependency only",
+      "covers": "@nestjs/mau, the deploy script and the README Deployment text gone; typescript pinned with a tilde, locked on that minor and inside the locked typescript-eslint peer range; pnpm-workspace.yaml denies every install script, holds only allowBuilds and overrides, and matches the lockfile overrides; esbuild GHSA-67mh-4wv8-2f99 decision and override checks; fast-check is a stable devDependency only; D9: the Anthropic SDK and exchange client packages are absent from every package.json dependency section and from the lockfile packages, and fixtures prove the check catches each",
       "status": "passing"
     },
     {
@@ -123,13 +183,13 @@
     {
       "file": "local-trading-agent-backend/test/unit/tooling/repo-files.spec.ts",
       "milestone": "S0",
-      "covers": ".env.example has two keys (D9), ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0d done, S0e next, digest pin in Database, Dependencies settlement) and tests.json at the repo root",
+      "covers": ".env.example has the three schema keys with a blank DATABASE_IDENTITY and unchanged URL and mode lines, ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0a to S0e done, S0 complete, S1a next, the S0e current state and setup steps, hand-offs to S7a, S7b, S11a and S12, three keys, @isaacs/nonrecursive-glob-match in the Dependencies settlement) and tests.json at the repo root",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/unit/tooling/research.spec.ts",
       "milestone": "S0",
-      "covers": "research/ uv skeleton, D13 README, no Python outside research/, TypeScript toolchain ignores it",
+      "covers": "research/ uv skeleton, D13 README naming research_reader, its URL and that research never connects as trader, no Python outside research/, TypeScript toolchain ignores it",
       "status": "passing"
     },
     {

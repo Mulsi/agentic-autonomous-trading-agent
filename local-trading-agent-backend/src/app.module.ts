@@ -4,6 +4,7 @@ import { ConfigModule, SETTINGS } from './config/config.module.js';
 import { loggerOptions } from './config/logging.js';
 import { secretValues } from './config/secrets.js';
 import type { Settings } from './config/settings.js';
+import { DbModule } from './db/db.module.js';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import type { Settings } from './config/settings.js';
         pinoHttp: loggerOptions(secretValues(settings)),
       }),
     }),
+    DbModule,
   ],
 })
 export class AppModule {}

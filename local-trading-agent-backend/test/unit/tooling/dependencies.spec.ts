@@ -191,3 +191,96 @@ describe('fast-check', () => {
     expect(devDependencies).not.toHaveProperty('@fast-check/vitest');
   });
 });
+
+describe('D9: no Anthropic SDK and no exchange client in the dependency tree', () => {
+  /** A name the app must never depend on, directly or transitively. */
+  const isForbidden = (name: string): boolean =>
+    name === '@anthropic-ai/sdk' || name === 'ccxt' || /binance/i.test(name);
+
+  const MANIFEST_SECTIONS = [
+    'dependencies',
+    'devDependencies',
+    'peerDependencies',
+    'optionalDependencies',
+    'bundleDependencies',
+    'bundledDependencies',
+  ];
+
+  /** Forbidden names in any dependency section of a package.json object. */
+  function forbiddenInManifest(manifest: Record<string, unknown>): string[] {
+    return MANIFEST_SECTIONS.flatMap((section) => {
+      const value = manifest[section];
+      const names = Array.isArray(value)
+        ? value.filter((name): name is string => typeof name === 'string')
+        : typeof value === 'object' && value !== null
+          ? Object.keys(value)
+          : [];
+      return names.filter(isForbidden);
+    });
+  }
+
+  /** Forbidden names among the lockfile's packages. */
+  function forbiddenInLockfile(lock: string): string[] {
+    return lockedPackages(lock)
+      .map(({ name }) => name)
+      .filter(isForbidden);
+  }
+
+  const lockfileWith = (name: string): string =>
+    [
+      "lockfileVersion: '9.0'",
+      '',
+      'packages:',
+      '',
+      '  zod@4.6.7:',
+      '    resolution: {integrity: sha512-fixture}',
+      '',
+      `  '${name}@1.0.0':`,
+      '    resolution: {integrity: sha512-fixture}',
+      '',
+      'snapshots:',
+      '',
+    ].join('\n');
+
+  const FIXTURE_NAMES = [
+    '@anthropic-ai/sdk',
+    'ccxt',
+    'binance',
+    'node-binance-api',
+    '@binance/connector',
+    'Binance-Futures',
+    'my-BINANCE-client',
+  ];
+
+  it.each(FIXTURE_NAMES)(
+    'the manifest check catches %s in every section',
+    (name) => {
+      for (const section of MANIFEST_SECTIONS) {
+        const manifest = section.startsWith('bundle')
+          ? { [section]: ['zod', name] }
+          : { [section]: { zod: '^4.0.0', [name]: '^1.0.0' } };
+
+        expect(forbiddenInManifest(manifest), section).toEqual([name]);
+      }
+    },
+  );
+
+  it.each(FIXTURE_NAMES)('the lockfile check catches %s', (name) => {
+    expect(forbiddenInLockfile(lockfileWith(name))).toEqual([name]);
+  });
+
+  it('package.json has none of them', () => {
+    expect(
+      forbiddenInManifest(
+        readPackageJson() as unknown as Record<string, unknown>,
+      ),
+    ).toEqual([]);
+  });
+
+  it('pnpm-lock.yaml has none of them', () => {
+    const lock = readLockfile();
+
+    expect(lockedPackages(lock).length).toBeGreaterThan(100);
+    expect(forbiddenInLockfile(lock)).toEqual([]);
+  });
+});

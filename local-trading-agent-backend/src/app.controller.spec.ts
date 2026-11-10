@@ -3,6 +3,13 @@ import { ModulesContainer, NestFactory } from '@nestjs/core';
 import { stubFixtureEnv } from '../test/fixtures/env.js';
 import { AppModule } from './app.module.js';
 
+// No Postgres in `pnpm test`: the boot's connection is substituted on the test
+// side (test/fixtures/database.ts). Production code has no switch for this.
+vi.mock(import('./db/client.js'), async (importOriginal) => {
+  const { fakeConnectDatabase } = await import('../test/fixtures/database.js');
+  return { ...(await importOriginal()), connectDatabase: fakeConnectDatabase };
+});
+
 describe('AppModule', () => {
   let context: INestApplicationContext;
 

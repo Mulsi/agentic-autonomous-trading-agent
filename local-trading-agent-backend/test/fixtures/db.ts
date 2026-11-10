@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { parseEnv } from 'node:util';
+import pg from 'pg';
 import { appRoot, readRepoFile } from './repo.js';
 
 // DB tests touch only throwaway databases with this prefix, so no test run can
@@ -52,6 +53,78 @@ export function composeUrl(database: string): string {
   const url = new URL(DATABASE_URL);
   url.pathname = `/${database}`;
   return url.toString();
+}
+
+/** `composeUrl` for a test database only: the guard runs first. */
+export function testDatabaseUrl(database: string): string {
+  return composeUrl(assertTestDatabaseName(database));
+}
+
+/** Runs `body` with a client connected to `url`, and always ends it. */
+export async function withClient<T>(
+  url: string,
+  body: (client: pg.Client) => Promise<T>,
+): Promise<T> {
+  const client = new pg.Client({ connectionString: url });
+  await client.connect();
+  try {
+    return await body(client);
+  } finally {
+    await client.end();
+  }
+}
+
+export interface DbObject {
+  schema: string;
+  name: string;
+  kind: string;
+}
+
+/**
+ * Every relation (table, view, sequence, index, ...), function and type in a
+ * non-system schema of a test database, leaving out the schemas in `skip`.
+ */
+export function userObjects(
+  database: string,
+  skip: readonly string[],
+): Promise<DbObject[]> {
+  return withClient(testDatabaseUrl(database), async (client) => {
+    const result = await client.query<DbObject>(
+      `WITH user_schemas AS (
+         SELECT oid, nspname FROM pg_namespace
+         WHERE nspname NOT IN ('pg_catalog', 'information_schema')
+           AND nspname NOT LIKE 'pg\\_toast%'
+           AND nspname NOT LIKE 'pg\\_temp\\_%'
+           AND nspname <> ALL($1::text[])
+       )
+       SELECT s.nspname AS schema, c.relname AS name, 'relation ' || c.relkind::text AS kind
+         FROM pg_class c JOIN user_schemas s ON s.oid = c.relnamespace
+       UNION ALL
+       SELECT s.nspname, p.proname, 'function'
+         FROM pg_proc p JOIN user_schemas s ON s.oid = p.pronamespace
+       UNION ALL
+       SELECT s.nspname, t.typname, 'type'
+         FROM pg_type t JOIN user_schemas s ON s.oid = t.typnamespace
+       ORDER BY 1, 2, 3`,
+      [skip],
+    );
+    return result.rows;
+  });
+}
+
+export interface MarkerRow {
+  marker: string;
+  xmin: string;
+}
+
+/** Every row of the marker table, with its `xmin`, in a test database. */
+export function markerRows(database: string): Promise<MarkerRow[]> {
+  return withClient(testDatabaseUrl(database), async (client) => {
+    const result = await client.query<MarkerRow>(
+      'SELECT marker::text AS marker, xmin::text AS xmin FROM database_identity',
+    );
+    return result.rows;
+  });
 }
 
 /** The part of `pg.Client` the helpers use, so unit tests can pass a stub. */
