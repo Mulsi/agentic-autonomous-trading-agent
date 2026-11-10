@@ -12,6 +12,7 @@ import {
   testDatabaseUrl,
   userObjects,
   withClient,
+  type DbObject,
   type MarkerRow,
 } from './fixtures/db.js';
 import { FIXTURE_DB_PASSWORD } from './fixtures/env.js';
@@ -147,15 +148,48 @@ describe('the identity line at boot', () => {
     },
   ];
 
-  it.each(cases)(
-    '$name: exits 0 and logs exactly one identity line before the startup line',
-    async (testCase) => {
+  interface Run {
+    result: MainResult;
+    /** The state right after this run, for the never-writes checks. */
+    after: {
+      first: MarkerRow[];
+      second: MarkerRow[];
+      unmigratedObjects: DbObject[];
+      unmigratedDrizzle: boolean;
+    };
+  }
+  const runs = new Map<string, Run>();
+
+  beforeAll(async () => {
+    for (const testCase of cases) {
       const identity = testCase.identity();
       const result = await runMain({
         DATABASE_URL: testDatabaseUrl(testCase.database()),
         TRADER_MODE: 'paper',
         ...(identity === undefined ? {} : { DATABASE_IDENTITY: identity }),
       });
+      runs.set(testCase.name, {
+        result,
+        after: {
+          first: await markerRows(first),
+          second: await markerRows(second),
+          unmigratedObjects: await userObjects(unmigrated, []),
+          unmigratedDrizzle: await schemaExists(unmigrated, 'drizzle'),
+        },
+      });
+    }
+  }, cases.length * RUN_LIMIT_MS);
+
+  function runOf(testCase: Case): Run {
+    const run = runs.get(testCase.name);
+    if (run === undefined) throw new Error(`no run for ${testCase.name}`);
+    return run;
+  }
+
+  it.each(cases)(
+    '$name: exits 0 and logs exactly one identity line before the startup line',
+    (testCase) => {
+      const { result } = runOf(testCase);
 
       expect(result.timedOut).toBe(false);
       expect(result.code, result.stderr).toBe(0);
@@ -177,14 +211,19 @@ describe('the identity line at boot', () => {
       expect(line?.marker).toBe(
         testCase.stored ? marker(firstRows) : undefined,
       );
-
-      // A boot never writes.
-      expect(await markerRows(first)).toEqual(firstRows);
-      expect(await markerRows(second)).toEqual(secondRows);
-      expect(await userObjects(unmigrated, [])).toEqual([]);
-      expect(await schemaExists(unmigrated, 'drizzle')).toBe(false);
     },
-    RUN_LIMIT_MS,
+  );
+
+  it.each(cases)(
+    '$name: the boot writes nothing (marker value and xmin unchanged, unmigrated database still empty)',
+    (testCase) => {
+      const { after } = runOf(testCase);
+
+      expect(after.first).toEqual(firstRows);
+      expect(after.second).toEqual(secondRows);
+      expect(after.unmigratedObjects).toEqual([]);
+      expect(after.unmigratedDrizzle).toBe(false);
+    },
   );
 });
 
