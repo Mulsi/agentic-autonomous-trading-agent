@@ -93,10 +93,15 @@ describe('progress.md', () => {
   const progress = readRepoFile('progress.md');
   const next = section(progress, 'Next');
 
-  it('marks S0a to S0e done', () => {
-    for (const job of ['S0a', 'S0b', 'S0c', 'S0d', 'S0e']) {
-      expect(progress).toMatch(new RegExp(`^- \\[x\\] ${job} `, 'm'));
-    }
+  it('marks S0a, S0b, S0c and S0d done', () => {
+    expect(progress).toMatch(/^- \[x\] S0a /m);
+    expect(progress).toMatch(/^- \[x\] S0b /m);
+    expect(progress).toMatch(/^- \[x\] S0c /m);
+    expect(progress).toMatch(/^- \[x\] S0d /m);
+  });
+
+  it('marks S0e done', () => {
+    expect(progress).toMatch(/^- \[x\] S0e /m);
   });
 
   it('says S0 is complete and names S1a as next', () => {

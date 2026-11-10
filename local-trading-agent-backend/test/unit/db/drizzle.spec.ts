@@ -84,7 +84,7 @@ describe('drizzle.config.ts', () => {
 describe('src/db/schema.ts', () => {
   const schema = readAppFile('src/db/schema.ts');
 
-  it('says trading tables arrive with their milestone', () => {
+  it('exists and says tables arrive with their milestone', () => {
     expect(schema).toMatch(/^\/\/ .*milestone.*\n?.*§7/m);
   });
 
@@ -161,7 +161,7 @@ describe('src/db/migrations', () => {
     );
   });
 
-  it('has an empty 0000 snapshot', () => {
+  it('has an empty snapshot', () => {
     const snapshot = JSON.parse(
       readAppFile(`${MIGRATIONS}/meta/0000_snapshot.json`),
     ) as Record<string, unknown>;
