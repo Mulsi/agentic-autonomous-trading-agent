@@ -50,7 +50,7 @@
       "id": "003-settings-redaction",
       "title": "S0c Settings and log redaction",
       "branch": "factory/003-settings-redaction",
-      "stage": "needs-human",
+      "stage": "merged",
       "round": 1,
       "maxRounds": 2,
       "rounds": [
@@ -65,9 +65,9 @@
       ],
       "gate": "PASS",
       "needsHuman": true,
-      "reason": "protected paths (.env.example, src/config/) and [human] criterion 30: confirm D9 settings change and accept the scrub's known limits",
+      "reason": "human approved: protected paths (.env.example, src/config/) and criterion 30",
       "builder": "a8faac51cbc4f93dd",
-      "updatedAt": "2026-11-09T17:32:44Z"
+      "updatedAt": "2026-11-10T10:08:47Z"
     }
   ]
 }
