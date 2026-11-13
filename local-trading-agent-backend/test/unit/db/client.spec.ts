@@ -158,11 +158,13 @@ describe('databaseConfig: the parameters come from DATABASE_URL alone', () => {
   });
 
   it('ignores the query string, so it cannot redirect the client', async () => {
-    const client = await derived(
-      settingsFor(
-        'postgresql://u@db.example:6543/name?host=elsewhere&port=1&user=x&password=y&options=-c%20a%3Db',
-      ),
-    );
+    // parseSettings refuses this URL (S0e round 2). The client ignores a query
+    // string anyway, as a second line of defence, so the settings are built
+    // directly here.
+    const url =
+      'postgresql://u@db.example:6543/name?host=elsewhere&port=1&user=x&password=y&options=-c%20a%3Db';
+    expect(() => settingsFor(url)).toThrow(SettingsError);
+    const client = await derived({ DATABASE_URL: url, TRADER_MODE: 'paper' });
 
     expect(client).toMatchObject({
       host: 'db.example',

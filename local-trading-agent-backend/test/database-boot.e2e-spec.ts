@@ -1,7 +1,10 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client, DatabaseError } from 'pg';
-import { CONNECT_TIMEOUT_MS } from '../src/db/client.js';
+import {
+  CONNECT_TIMEOUT_MS,
+  MARKER_READ_TIMEOUT_MS,
+} from '../src/db/client.js';
 import {
   composeUrl,
   createTestDatabase,
@@ -16,6 +19,7 @@ import {
   type MarkerRow,
 } from './fixtures/db.js';
 import { FIXTURE_DB_PASSWORD } from './fixtures/env.js';
+import { fakePostgres } from './fixtures/fake-postgres.js';
 import { REDACTED } from './fixtures/logs.js';
 import {
   closedPort,
@@ -349,6 +353,74 @@ describe('a failed connect at boot prints no password', () => {
       expect(result.stderr).toContain(
         `password authentication failed for user "${REDACTED}"`,
       );
+    },
+    RUN_LIMIT_MS,
+  );
+});
+
+describe('a failed marker read after the connection opened (S0e round 2)', () => {
+  /** One identity line, UNKNOWN unreadable, before the startup line. */
+  function expectUnreadableBoot(result: MainResult): void {
+    expect(result.timedOut).toBe(false);
+    expect(result.signal).toBeNull();
+    expect(result.code, result.stderr).toBe(0);
+    const lines = jsonLines(result);
+    const identity = lines.filter((line) => line.msg === 'Database identity');
+    const identityAt = lines.findIndex(
+      (line) => line.msg === 'Database identity',
+    );
+    const startupAt = lines.findIndex((line) => line.mode !== undefined);
+    expect(identity).toHaveLength(1);
+    expect(identity[0]).toMatchObject({
+      level: 'warn',
+      status: 'UNKNOWN',
+      reason: 'unreadable',
+    });
+    expect(identity[0]).not.toHaveProperty('marker');
+    expect(identityAt).toBeLessThan(startupAt);
+  }
+
+  it(
+    'a connection reset during the read: UNKNOWN unreadable, and the boot carries on',
+    async () => {
+      const server = await fakePostgres('reset-on-query');
+      try {
+        const result = await runMain({
+          DATABASE_URL: server.url,
+          TRADER_MODE: 'paper',
+          DATABASE_IDENTITY: '9d5f0c1e-2b3a-4c5d-8e6f-7a8b9c0d1e2f',
+        });
+
+        expectUnreadableBoot(result);
+        expect(server.connections()).toBe(1);
+        expect(server.queries()).toBe(1);
+      } finally {
+        await server.close();
+      }
+    },
+    RUN_LIMIT_MS,
+  );
+
+  it(
+    'a read that never answers: UNKNOWN unreadable within the read timeout',
+    async () => {
+      const server = await fakePostgres('silent-on-query');
+      try {
+        const started = Date.now();
+        const result = await runMain({
+          DATABASE_URL: server.url,
+          TRADER_MODE: 'paper',
+          DATABASE_IDENTITY: '9d5f0c1e-2b3a-4c5d-8e6f-7a8b9c0d1e2f',
+        });
+        const elapsed = Date.now() - started;
+
+        expectUnreadableBoot(result);
+        expect(server.queries()).toBe(1);
+        expect(elapsed).toBeGreaterThanOrEqual(MARKER_READ_TIMEOUT_MS);
+        expect(elapsed).toBeLessThan(EXIT_LIMIT_MS);
+      } finally {
+        await server.close();
+      }
     },
     RUN_LIMIT_MS,
   );

@@ -3,7 +3,13 @@ import { z } from 'zod';
 // The app holds no Anthropic credential (D9). Any variable not named here,
 // including an Anthropic key in the parent environment, is dropped unread.
 export const settingsSchema = z.object({
-  DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/, hostname: /./ }),
+  // No query string and no fragment. The client takes only scheme, userinfo,
+  // host, port and path, so a parameter such as `?sslmode=require` would be
+  // dropped silently; it is refused instead. A raw `?` or `#` always starts a
+  // query or a fragment in the URL parser, so the check is on the characters.
+  DATABASE_URL: z
+    .url({ protocol: /^postgres(ql)?$/, hostname: /./ })
+    .refine((url) => !/[?#]/.test(url)),
   TRADER_MODE: z.literal('paper'),
   // The identity marker this database is expected to carry (src/db/identity.ts).
   // Optional and not a secret. Unset, empty and whitespace-only all mean "not

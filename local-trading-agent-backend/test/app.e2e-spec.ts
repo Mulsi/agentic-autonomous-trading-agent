@@ -178,6 +178,25 @@ describe('node dist/main.js with invalid env', () => {
     EXIT_LIMIT_MS + 5_000,
   );
 
+  it.each(['?sslmode=require', '#fragment'])(
+    'refuses a DATABASE_URL ending in %s, before connecting (S0e round 2)',
+    async (suffix) => {
+      const result = await runMain({
+        DATABASE_URL: listenerUrl(listener) + suffix,
+        TRADER_MODE: 'paper',
+      });
+
+      expect(result.timedOut).toBe(false);
+      expect(result.code).not.toBe(0);
+      expect(result.code).not.toBeNull();
+      expect(result.stderr).toContain('DATABASE_URL');
+      expect(result.stdout + result.stderr).not.toContain(FIXTURE_DB_PASSWORD);
+      expect(result.stdout + result.stderr).not.toContain(suffix);
+      expect(listener.connections()).toBe(0);
+    },
+    EXIT_LIMIT_MS + 5_000,
+  );
+
   it(
     'refuses to start when TRADER_MODE is unset',
     async () => {

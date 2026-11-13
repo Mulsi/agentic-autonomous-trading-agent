@@ -2,7 +2,11 @@ import { NestFactory } from '@nestjs/core';
 import { Client } from 'pg';
 import { AppModule } from '../../src/app.module.js';
 import { parseSettings } from '../../src/config/settings.js';
-import { APPLICATION_NAME, connectDatabase } from '../../src/db/client.js';
+import {
+  APPLICATION_NAME,
+  connectDatabase,
+  MARKER_READ_TIMEOUT_MS,
+} from '../../src/db/client.js';
 import { IDENTITY } from '../../src/db/db.module.js';
 import type { DatabaseIdentity } from '../../src/db/identity.js';
 import {
@@ -89,6 +93,35 @@ describe('connectDatabase', () => {
       await connection.close();
     }
   });
+
+  it('a read blocked by a lock on database_identity fails within the read timeout (S0e round 2)', async () => {
+    // Stands in for an operator's LOCK TABLE, or a migration holding ACCESS
+    // EXCLUSIVE, while the app boots.
+    const locker = new Client({ connectionString: testDatabaseUrl(migrated) });
+    await locker.connect();
+    try {
+      await locker.query('BEGIN');
+      await locker.query(
+        'LOCK TABLE database_identity IN ACCESS EXCLUSIVE MODE',
+      );
+
+      const started = Date.now();
+      const connection = await connectDatabase(settingsFor(migrated));
+      const elapsed = Date.now() - started;
+      try {
+        expect(connection.marker).toEqual({ kind: 'failed' });
+        expect(elapsed).toBeGreaterThanOrEqual(MARKER_READ_TIMEOUT_MS - 50);
+        expect(elapsed).toBeLessThan(MARKER_READ_TIMEOUT_MS + 2_000);
+      } finally {
+        await connection.close();
+      }
+    } finally {
+      await locker.query('ROLLBACK');
+      await locker.end();
+    }
+    // Once the lock is gone, the abandoned read leaves no session behind.
+    expect(await settle(migrated)).toBe(0);
+  }, 30_000);
 
   it('runs its session in UTC whatever the server says', async () => {
     const connection = await connectDatabase(settingsFor(migrated));

@@ -9,3 +9,7 @@ allowBuilds:
 # tsx's and vite's esbuild do not move.
 overrides:
   '@esbuild-kit/core-utils>esbuild': ^0.25.4
+# A pnpm script never installs on its own. When package.json or the lockfile
+# no longer matches node_modules, `pnpm <script>` fails instead of fetching and
+# installing whatever the changed manifest names. Run `pnpm install` yourself.
+verifyDepsBeforeRun: error

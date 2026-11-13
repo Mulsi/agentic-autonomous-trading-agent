@@ -9,19 +9,19 @@
     {
       "file": "local-trading-agent-backend/test/app.e2e-spec.ts",
       "milestone": "S0",
-      "covers": "built app on a migrated throwaway database: exits by itself, ignores ANTHROPIC_API_KEY (D9), logs JSON lines only with a UTC time and Nest boot lines through pino, one startup line with mode paper and a UUID correlationId, the loaded password in no output; refuses invalid settings and unparseable DATABASE_URLs without leaking the password, and a listener at the URL sees no connection; the built AppModule scrubs secret values from every log line including buffered boot lines",
+      "covers": "built app on a migrated throwaway database: exits by itself, ignores ANTHROPIC_API_KEY (D9), logs JSON lines only with a UTC time and Nest boot lines through pino, one startup line with mode paper and a UUID correlationId, the loaded password in no output; refuses invalid settings and unparseable DATABASE_URLs without leaking the password, and a listener at the URL sees no connection; the built AppModule scrubs secret values from every log line including buffered boot lines; a DATABASE_URL with ?sslmode=require or a fragment is refused before any connection (round 2)",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/database-boot.e2e-spec.ts",
       "milestone": "S0",
-      "covers": "built app against throwaway databases: exactly one identity line before the startup line (warn UNKNOWN not_configured, info VERIFIED, warn mismatch for another marker or upper case, warn missing_marker without migrations), a boot never writes (marker value and xmin unchanged, unmigrated database stays empty); a failed connect (refused, closed at once, silent until the connect timeout, wrong password, server error holding the password) exits non-zero without a signal, prints what failed, one connection only, and no password or URL, with [REDACTED] in the server error",
+      "covers": "built app against throwaway databases: exactly one identity line before the startup line (warn UNKNOWN not_configured, info VERIFIED, warn mismatch for another marker or upper case, warn missing_marker without migrations), a boot never writes (marker value and xmin unchanged, unmigrated database stays empty); a failed connect (refused, closed at once, silent until the connect timeout, wrong password, server error holding the password) exits non-zero without a signal, prints what failed, one connection only, and no password or URL, with [REDACTED] in the server error; a connection reset during the marker read and a read that never answers both boot to exit 0 with UNKNOWN unreadable, the second within the read timeout (round 2)",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/db/client.db-spec.ts",
       "milestone": "S0",
-      "covers": "connectDatabase reads the single marker of a migrated database and no table on an unmigrated one, the session runs in UTC, and a closed application context leaves no connection in pg_stat_activity",
+      "covers": "connectDatabase reads the single marker of a migrated database and no table on an unmigrated one, the session runs in UTC, and a closed application context leaves no connection in pg_stat_activity; a marker read blocked by ACCESS EXCLUSIVE on database_identity fails within the read timeout and leaves no session (round 2)",
       "status": "passing"
     },
     {
@@ -93,7 +93,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/config/secrets.property.spec.ts",
       "milestone": "S0",
-      "covers": "fast-check property over 2,000 runs: every DATABASE_URL that parseSettings accepts gets through secretValues and loggerOptions without throwing (boot availability); the generator reaches the boundary: at least a quarter pass, some fail, each listed passing shape occurs and holds on the parsed URL (edge ASCII and C0, edge U+00A0 or U+FEFF, inner tab/LF/CR, percent-encoded, invalid-percent, raw @ and non-ASCII passwords, bracketed IPv6 and non-ASCII hosts, explicit port, both schemes, upper-case scheme), and the three UNPARSEABLE_DATABASE_URLS shapes occur and always fail",
+      "covers": "fast-check property over 2,000 runs: every DATABASE_URL that parseSettings accepts gets through secretValues and loggerOptions without throwing (boot availability); the generator reaches the boundary: at least a quarter pass, some fail, each listed passing shape occurs and holds on the parsed URL (edge ASCII and C0, edge U+00A0 or U+FEFF, inner tab/LF/CR, percent-encoded, invalid-percent, raw @ and non-ASCII passwords, bracketed IPv6 and non-ASCII hosts, explicit port, both schemes, upper-case scheme), and the three UNPARSEABLE_DATABASE_URLS shapes occur and always fail; the near-miss shape \"query or fragment\" occurs and always fails (round 2)",
       "status": "passing"
     },
     {
@@ -105,13 +105,13 @@
     {
       "file": "local-trading-agent-backend/test/unit/config/settings.spec.ts",
       "milestone": "S0",
-      "covers": "paper-only settings with exactly DATABASE_URL, TRADER_MODE and the optional DATABASE_IDENTITY (unset or blank is not configured, anything else kept exactly, no value of it alone throws, not a secret), ANTHROPIC_API_KEY dropped unread (D9), no values in errors, unparseable DATABASE_URL errors carry no password",
+      "covers": "paper-only settings with exactly DATABASE_URL, TRADER_MODE and the optional DATABASE_IDENTITY (unset or blank is not configured, anything else kept exactly, no value of it alone throws, not a secret), ANTHROPIC_API_KEY dropped unread (D9), no values in errors, unparseable DATABASE_URL errors carry no password; DATABASE_URL with a query string or fragment is refused naming only the key (round 2), percent-encoded ? and # still accepted, and properties that no accepted URL has a query or fragment and that adding one makes any accepted URL refused",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/unit/db/client.spec.ts",
       "milestone": "S0",
-      "covers": "databaseConfig: host, port, user, password and database from DATABASE_URL alone with every PG* variable set (port 5432, OS user and user-named database by default, query string ignored), no connection string or type parsers, bounded connect timeout; the client password is a scrubbed form for the S0c encoded URLs, the recorded counterexample and a 2,000-run property; importing app.module.ts with an empty env opens no connection",
+      "covers": "databaseConfig: host, port, user, password and database from DATABASE_URL alone with every PG* variable set (port 5432, OS user and user-named database by default, query string ignored), no connection string or type parsers, bounded connect timeout; the client password is a scrubbed form for the S0c encoded URLs, the recorded counterexample and a 2,000-run property; importing app.module.ts with an empty env opens no connection; parseSettings refuses a query string, and the client ignores one anyway (round 2)",
       "status": "passing"
     },
     {
@@ -145,6 +145,12 @@
       "status": "passing"
     },
     {
+      "file": "local-trading-agent-backend/test/unit/db/marker-read.spec.ts",
+      "milestone": "S0",
+      "covers": "marker read against a fake server (round 2): a connection reset mid-read is a failed read, UNKNOWN unreadable, one connection and no crash, and the pool still closes; a read that never answers fails within the 5 s read timeout",
+      "status": "passing"
+    },
+    {
       "file": "local-trading-agent-backend/test/unit/db/migrate-env.spec.ts",
       "milestone": "S0",
       "covers": "pnpm db:migrate ignores a .env in its working directory",
@@ -171,7 +177,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/tooling/dependencies.spec.ts",
       "milestone": "S0",
-      "covers": "@nestjs/mau, the deploy script and the README Deployment text gone; typescript pinned with a tilde, locked on that minor and inside the locked typescript-eslint peer range; pnpm-workspace.yaml denies every install script, holds only allowBuilds and overrides, and matches the lockfile overrides; esbuild GHSA-67mh-4wv8-2f99 decision and override checks; fast-check is a stable devDependency only; D9: the Anthropic SDK and exchange client packages are absent from every package.json dependency section and from the lockfile packages, and fixtures prove the check catches each",
+      "covers": "@nestjs/mau, the deploy script and the README Deployment text gone; typescript pinned with a tilde, locked on that minor and inside the locked typescript-eslint peer range; pnpm-workspace.yaml denies every install script, holds only allowBuilds and overrides, and matches the lockfile overrides; esbuild GHSA-67mh-4wv8-2f99 decision and override checks; fast-check is a stable devDependency only; D9: the Anthropic SDK and exchange client packages are absent from every package.json dependency section and from the lockfile packages, and fixtures prove the check catches each; pnpm-workspace.yaml sets verifyDepsBeforeRun: error, so a pnpm script never installs (round 2)",
       "status": "passing"
     },
     {
@@ -183,7 +189,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/tooling/repo-files.spec.ts",
       "milestone": "S0",
-      "covers": ".env.example has the three schema keys with a blank DATABASE_IDENTITY and unchanged URL and mode lines, ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0a to S0e done, S0 complete, S1a next, the S0e current state and setup steps, hand-offs to S7a, S7b, S11a and S12, three keys, @isaacs/nonrecursive-glob-match in the Dependencies settlement) and tests.json at the repo root",
+      "covers": ".env.example has the three schema keys with a blank DATABASE_IDENTITY and unchanged URL and mode lines, ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0a to S0e done, S0 complete, S1a next, the S0e current state and setup steps, hand-offs to S7a, S7b, S11a and S12, three keys, @isaacs/nonrecursive-glob-match in the Dependencies settlement) and tests.json at the repo root; the identity setup is limited to a database's first run, and a mismatch marker is never copied into .env (round 2)",
       "status": "passing"
     },
     {

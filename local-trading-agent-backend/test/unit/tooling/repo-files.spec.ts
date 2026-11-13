@@ -193,6 +193,18 @@ describe('progress.md', () => {
       expect(steps.every((at) => at >= 0)).toBe(true);
       expect([...steps].sort((a, b) => a - b)).toEqual(steps);
     });
+
+    it("limits the setup to a database's first run, and never copies a mismatch marker (S0e round 2)", () => {
+      const setup = current.slice(current.indexOf('Setup'));
+
+      expect(setup).toMatch(/^Setup, only for a database's first run/);
+      expect(setup).toMatch(
+        /a `mismatch` or `missing_marker` is an incident, not a setup step \(Rule 9/,
+      );
+      expect(setup).toContain(
+        'Never copy the marker printed on a `mismatch` line into `.env`',
+      );
+    });
   });
 
   it('records the hand-offs to S7a, S7b, S11a and S12', () => {

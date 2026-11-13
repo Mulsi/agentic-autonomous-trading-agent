@@ -13,6 +13,7 @@ import {
   fixtureEnv,
   UNPARSEABLE_DATABASE_URLS,
 } from '../../fixtures/env.js';
+import { databaseUrls } from '../../fixtures/database-urls.js';
 import { listAppFiles, readAppFile } from '../../fixtures/repo.js';
 
 type Env = Record<string, string | undefined>;
@@ -241,6 +242,109 @@ describe('parseSettings: DATABASE_IDENTITY', () => {
     });
 
     expect(secretValues(withIdentity)).toEqual(secretValues(plain));
+  });
+});
+
+describe('parseSettings: DATABASE_URL with a query string or fragment (S0e round 2)', () => {
+  const S = FIXTURE_DB_PASSWORD;
+  const base = `postgresql://trader:${S}@localhost:5432/trader`;
+
+  function caught(url: string): SettingsError {
+    try {
+      parseSettings({ ...fixtureEnv, DATABASE_URL: url });
+    } catch (error) {
+      if (error instanceof SettingsError) return error;
+      throw error;
+    }
+    throw new Error(`parseSettings accepted ${url}`);
+  }
+
+  it.each([
+    `${base}?sslmode=require`,
+    `${base}?sslmode=disable`,
+    `${base}?host=elsewhere`,
+    `${base}?`,
+    `${base}#`,
+    `${base}#fragment`,
+    `${base}?a=b#c`,
+    `postgresql://trader:${S}@localhost:5432?sslmode=require`,
+    `  ${base}?sslmode=require  `,
+  ])('refuses %s, naming only DATABASE_URL', (url) => {
+    const error = caught(url);
+
+    expect(error.invalidKeys).toEqual(['DATABASE_URL']);
+    expect(error.cause).toBeUndefined();
+    expect(error).not.toHaveProperty('input');
+    for (const text of [
+      error.message,
+      error.stack ?? '',
+      JSON.stringify(error),
+      inspect(error, { showHidden: true, depth: null }),
+    ]) {
+      expect(text).not.toContain(S);
+      expect(text).not.toContain('sslmode');
+    }
+  });
+
+  it('still accepts a percent-encoded ? or # in the password', () => {
+    const url = `postgresql://trader:a%3Fb%23c-${S}@localhost:5432/trader`;
+
+    expect(
+      parseSettings({ ...fixtureEnv, DATABASE_URL: url }).DATABASE_URL,
+    ).toBe(url);
+  });
+
+  it('every accepted URL has neither a query string nor a fragment', () => {
+    fc.assert(
+      fc.property(databaseUrls, ({ value }) => {
+        let settings;
+        try {
+          settings = parseSettings({
+            DATABASE_URL: value,
+            TRADER_MODE: 'paper',
+          });
+        } catch (error) {
+          if (error instanceof SettingsError) return;
+          throw error;
+        }
+        const url = new URL(settings.DATABASE_URL);
+
+        expect(url.search).toBe('');
+        expect(url.hash).toBe('');
+        // An empty query or fragment still leaves its delimiter in href.
+        expect(url.href).not.toMatch(/[?#]/);
+      }),
+      { numRuns: 2_000 },
+    );
+  });
+
+  it('adding a query string or fragment to any accepted URL makes it refused', () => {
+    fc.assert(
+      fc.property(
+        databaseUrls,
+        fc.constantFrom('?', '#', '?sslmode=require', '#x', '?a#b'),
+        ({ value }, suffix) => {
+          let settings;
+          try {
+            settings = parseSettings({
+              DATABASE_URL: value,
+              TRADER_MODE: 'paper',
+            });
+          } catch (error) {
+            if (error instanceof SettingsError) return;
+            throw error;
+          }
+
+          expect(
+            invalidKeysFor({
+              DATABASE_URL: settings.DATABASE_URL + suffix,
+              TRADER_MODE: 'paper',
+            }),
+          ).toEqual(['DATABASE_URL']);
+        },
+      ),
+      { numRuns: 1_000 },
+    );
   });
 });
 

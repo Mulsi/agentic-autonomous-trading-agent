@@ -104,15 +104,29 @@ async function readMarker(
     values: params,
     query_timeout: MARKER_READ_TIMEOUT_MS,
   };
-  let markers: string[];
+  // A checked-out client has no `error` listener, and pg emits `error` when the
+  // connection is lost mid-query. Unheard, that would crash the boot. While the
+  // read runs, this listener hears it; the query itself then rejects, and the
+  // read is `failed` (UNKNOWN `unreadable`).
+  client.on('error', ignoreDuringRead);
+  let read: MarkerRead;
+  let broken = false;
   try {
     const result = await client.query<{ marker: string }>(query);
-    markers = result.rows.map((row) => row.marker);
+    read = { kind: 'rows', markers: result.rows.map((row) => row.marker) };
   } catch (error) {
     // The connection may be mid-query or broken: discard it.
-    client.release(true);
-    return markerReadFailure(error);
+    broken = true;
+    read = markerReadFailure(error);
+  } finally {
+    // Release first: the pool puts its own error listener back on the client.
+    client.release(broken);
+    client.off('error', ignoreDuringRead);
   }
-  client.release();
-  return { kind: 'rows', markers };
+  return read;
+}
+
+/** The query's own rejection carries the failure; the event adds nothing. */
+function ignoreDuringRead(): void {
+  // Nothing to do: see readMarker.
 }

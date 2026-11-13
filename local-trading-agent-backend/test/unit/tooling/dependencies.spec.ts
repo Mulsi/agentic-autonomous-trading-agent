@@ -96,10 +96,16 @@ describe('pnpm-workspace.yaml', () => {
     }
   });
 
-  it('holds only allowBuilds and overrides', () => {
+  it('holds only allowBuilds, overrides and verifyDepsBeforeRun', () => {
     for (const key of Object.keys(workspace)) {
-      expect(['allowBuilds', 'overrides']).toContain(key);
+      expect(['allowBuilds', 'overrides', 'verifyDepsBeforeRun']).toContain(
+        key,
+      );
     }
+  });
+
+  it('makes a pnpm script fail instead of installing (verifyDepsBeforeRun: error)', () => {
+    expect(workspace.verifyDepsBeforeRun).toBe('error');
   });
 
   it('matches the overrides that pnpm-lock.yaml records', () => {
