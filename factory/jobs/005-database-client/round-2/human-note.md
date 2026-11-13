@@ -1,0 +1,11 @@
+# Human note for round 2
+
+The human chose "Send back first" after round 1. Fix these five items, and change nothing else. The round-1 reviews in `round-1/` have the detail behind each item.
+
+1. **Setup steps must not pin a stand-in database** (risk review item 1, `progress.md:38-42`). Say plainly that the `DATABASE_IDENTITY` setup applies only to a database's first run. A later `mismatch` or `missing_marker` is an incident to reconcile, and the marker printed on that log line must never be copied into `.env`. Put this wherever the setup steps are documented.
+2. **A dropped connection during the marker read must give UNKNOWN `unreadable`, not a crash** (risk review item 2, `src/db/client.ts:108-116`). Attach an `error` listener to the checked-out client for the duration of the read, so a socket reset ends as `unreadable` and the boot carries on. Add a test with a fake server that resets the connection mid-read.
+3. **Prove the marker read timeout works** (risk review item 3, `src/db/client.ts:16` and `102-106`). Add a test where the read never answers, for example a fake server or a lock on `database_identity`, and show that the boot ends with UNKNOWN `unreadable` within the bound instead of hanging.
+4. **Refuse a `DATABASE_URL` with a query string or fragment** (security review item 1). The client ignores the query string, so today `?sslmode=require` silently connects in plaintext. `parseSettings` must reject such a URL with a `SettingsError` that names only the key, never the value. Add tests, and keep the S0d property test passing.
+5. **Stop pnpm installing dependencies before running a script** (security review item 6). Set the pnpm option that makes a changed `package.json` fail the run instead of installing, for example `verifyDepsBeforeRun: error` in `pnpm-workspace.yaml`. First confirm the option and value exist in the installed pnpm. Show that `pnpm test` with an edited `package.json` fails without downloading anything, and that `pnpm install --frozen-lockfile` followed by `pnpm test` still passes. Run that check with `--offline`, or call `vitest` directly, so nothing is fetched.
+
+Record each fix and its test output in `build.md` under a "Round 2" heading.
