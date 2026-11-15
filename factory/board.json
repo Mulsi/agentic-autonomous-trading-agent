@@ -123,6 +123,29 @@
       "reason": "",
       "builder": "ab0ea5262dba638ef",
       "updatedAt": "2026-11-15T16:52:58Z"
+    },
+    {
+      "id": "006-db-client-followups",
+      "title": "S0f Database client follow-ups",
+      "branch": "factory/006-db-client-followups",
+      "stage": "needs-human",
+      "round": 1,
+      "maxRounds": 2,
+      "rounds": [
+        {
+          "reviews": {
+            "security": "PASS",
+            "risk": "PASS",
+            "quant": "PASS",
+            "code": "PASS"
+          }
+        }
+      ],
+      "gate": "PASS",
+      "needsHuman": true,
+      "reason": "protected path (src/config/boot-output.ts) and five open decisions in the spec",
+      "builder": "aa461d70808d2178e",
+      "updatedAt": "2026-11-15T22:26:36Z"
     }
   ]
 }
