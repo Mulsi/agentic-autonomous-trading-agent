@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   bigint,
   integer,
@@ -30,6 +30,25 @@ const roundTrip = pgTable('round_trip', {
   at: timestamp('at', { withTimezone: true }),
   atMs: bigint('at_ms', { mode: 'number' }),
   amount: numeric('amount'),
+});
+
+// S0f evidence tables, also only in the throwaway database.
+const int8Table = pgTable('fx_int8', {
+  id: integer('id').primaryKey(),
+  n: bigint('n', { mode: 'bigint' }),
+});
+const numericArray = pgTable('fx_numeric_array', {
+  id: integer('id').primaryKey(),
+  v: numeric('v').array(),
+});
+const fxNow = pgTable('fx_now', {
+  id: integer('id').primaryKey(),
+  at6: timestamp('at6', { withTimezone: true }),
+  at3: timestamp('at3', { withTimezone: true, precision: 3 }),
+});
+const fxNowDefault = pgTable('fx_now_default', {
+  id: integer('id').primaryKey(),
+  at3: timestamp('at3', { withTimezone: true, precision: 3 }),
 });
 
 const INSTANTS = [
@@ -67,6 +86,22 @@ beforeAll(async () => {
          amount numeric,
          naive timestamp without time zone
        )`,
+    );
+    await client.query(
+      `CREATE TABLE fx_int8 (id integer PRIMARY KEY, n int8);
+       INSERT INTO fx_int8 VALUES (1, 9007199254740993);
+       CREATE TABLE fx_numeric_array (id integer PRIMARY KEY, v numeric[]);
+       INSERT INTO fx_numeric_array VALUES (1, '{1.10,-0.00000001}');
+       CREATE TABLE fx_now (
+         id integer PRIMARY KEY,
+         at6 timestamptz DEFAULT '2024-01-15 12:00:00.123987+00',
+         at3 timestamptz(3) DEFAULT '2024-01-15 12:00:00.123987+00'
+       );
+       INSERT INTO fx_now (id) VALUES (1);
+       CREATE TABLE fx_now_default (
+         id integer PRIMARY KEY,
+         at3 timestamptz(3) DEFAULT now()
+       );`,
     );
   });
   connection = await connectDatabase(
@@ -184,5 +219,139 @@ describe('a round trip through the client', () => {
     // The driver reads it as Ljubljana local time, one hour ahead of UTC.
     expect(read).not.toBe(utc);
     expect(read - utc).toBe(new Date(utc).getTimezoneOffset() * 60_000);
+  });
+});
+
+describe('int8, jsonb and numeric[] through the raw pool (S0f)', () => {
+  it('a literal int8 beyond 2^53 comes back as the identical string', async () => {
+    const result = await connection.db.$client.query<{ n: unknown }>(
+      'SELECT 9007199254740993::int8 AS n',
+    );
+
+    expect(result.rows[0]?.n).toBe('9007199254740993');
+    expect(typeof result.rows[0]?.n).toBe('string');
+  });
+
+  it('an int8 column holding it comes back as the identical string', async () => {
+    const result = await connection.db.$client.query<{ n: unknown }>(
+      'SELECT n FROM fx_int8 WHERE id = 1',
+    );
+
+    expect(result.rows[0]?.n).toBe('9007199254740993');
+    expect(typeof result.rows[0]?.n).toBe('string');
+  });
+
+  it('control: through Drizzle a bigint-mode int8 is a JS bigint', async () => {
+    const [row] = await connection.db
+      .select({ n: int8Table.n })
+      .from(int8Table);
+
+    expect(row?.n).toBe(9007199254740993n);
+  });
+
+  it('control for the JSON ban: a jsonb number comes back as a JS number', async () => {
+    const result = await connection.db.$client.query<{ j: { p: unknown } }>(
+      `SELECT '{"p": 0.10}'::jsonb AS j`,
+    );
+
+    expect(typeof result.rows[0]?.j.p).toBe('number');
+    expect(result.rows[0]?.j.p).toBe(0.1);
+  });
+
+  // The evidence for the numeric-array ban: neither path keeps the strings.
+  it('numeric[] through the raw pool: JS numbers, not the stored strings', async () => {
+    const result = await connection.db.$client.query<{ v: unknown[] }>(
+      'SELECT v FROM fx_numeric_array WHERE id = 1',
+    );
+    const values = result.rows[0]?.v ?? [];
+
+    expect(values).toEqual([1.1, -1e-8]);
+    expect(values.map((value) => typeof value)).toEqual(['number', 'number']);
+  });
+
+  it('numeric[] through Drizzle: strings of those numbers, not the stored ones', async () => {
+    const [row] = await connection.db
+      .select({ v: numericArray.v })
+      .from(numericArray);
+
+    expect(row?.v).toEqual(['1.1', '-1e-8']);
+    expect(row?.v?.map((value) => typeof value)).toEqual(['string', 'string']);
+    expect(row?.v).not.toEqual(['1.10', '-0.00000001']);
+  });
+});
+
+describe('server-filled timestamptz: microseconds against milliseconds (D12, S0f)', () => {
+  it('through Drizzle: = on the Date read from at6 misses, from at3 finds the row', async () => {
+    const [row] = await connection.db
+      .select({ at6: fxNow.at6, at3: fxNow.at3 })
+      .from(fxNow)
+      .where(eq(fxNow.id, 1));
+    expect(row?.at6).toBeInstanceOf(Date);
+    expect(row?.at3).toBeInstanceOf(Date);
+    const at6 = row?.at6 ?? new Date(0);
+    const at3 = row?.at3 ?? new Date(0);
+    // The µs are gone in JS; precision 3 rounded them to .124 on the server.
+    expect(at6.toISOString()).toBe('2024-01-15T12:00:00.123Z');
+    expect(at3.toISOString()).toBe('2024-01-15T12:00:00.124Z');
+
+    const by6 = await connection.db
+      .select({ id: fxNow.id })
+      .from(fxNow)
+      .where(eq(fxNow.at6, at6));
+    const by3 = await connection.db
+      .select({ id: fxNow.id })
+      .from(fxNow)
+      .where(eq(fxNow.at3, at3));
+
+    expect(by6).toHaveLength(0);
+    expect(by3).toEqual([{ id: 1 }]);
+  });
+
+  it('through the raw pool: the same', async () => {
+    const pool = connection.db.$client;
+    const read = await pool.query<{ at6: Date; at3: Date }>(
+      'SELECT at6, at3 FROM fx_now WHERE id = 1',
+    );
+    const row = read.rows[0];
+    expect(row?.at6).toBeInstanceOf(Date);
+    expect(row?.at3).toBeInstanceOf(Date);
+
+    const by6 = await pool.query('SELECT id FROM fx_now WHERE at6 = $1', [
+      row?.at6,
+    ]);
+    const by3 = await pool.query('SELECT id FROM fx_now WHERE at3 = $1', [
+      row?.at3,
+    ]);
+
+    expect(by6.rowCount).toBe(0);
+    expect(by3.rowCount).toBe(1);
+  });
+
+  it('20 rows with at3 timestamptz(3) DEFAULT now() are each found again by =', async () => {
+    for (let id = 1; id <= 20; id += 1) {
+      await connection.db.$client.query(
+        'INSERT INTO fx_now_default (id) VALUES ($1)',
+        [id],
+      );
+    }
+    const rows = await connection.db
+      .select({ id: fxNowDefault.id, at3: fxNowDefault.at3 })
+      .from(fxNowDefault)
+      .orderBy(fxNowDefault.id);
+    expect(rows).toHaveLength(20);
+
+    for (const { id, at3 } of rows) {
+      expect(at3).toBeInstanceOf(Date);
+      const found = await connection.db
+        .select({ id: fxNowDefault.id })
+        .from(fxNowDefault)
+        .where(
+          and(
+            eq(fxNowDefault.id, id),
+            eq(fxNowDefault.at3, at3 ?? new Date(0)),
+          ),
+        );
+      expect(found).toEqual([{ id }]);
+    }
   });
 });

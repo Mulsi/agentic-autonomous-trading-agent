@@ -335,3 +335,19 @@ describe('importing src/app.module.ts', () => {
     }
   });
 });
+
+describe('the global type parsers after importing src/db/client.ts (S0f)', () => {
+  it('int8 and numeric still parse to the identical string', async () => {
+    await import('../../../src/db/client.js');
+
+    const parse = (oid: number, text: string): unknown =>
+      (pg.types.getTypeParser(oid, 'text') as (value: string) => unknown)(text);
+    const int8 = parse(20, '9007199254740993');
+    const numeric = parse(1700, '1.10');
+
+    expect(int8).toBe('9007199254740993');
+    expect(typeof int8).toBe('string');
+    expect(numeric).toBe('1.10');
+    expect(typeof numeric).toBe('string');
+  });
+});

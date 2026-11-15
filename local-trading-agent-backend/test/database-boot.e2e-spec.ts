@@ -359,8 +359,11 @@ describe('a failed connect at boot prints no password', () => {
 });
 
 describe('a failed marker read after the connection opened (S0e round 2)', () => {
-  /** One identity line, UNKNOWN unreadable, before the startup line. */
-  function expectUnreadableBoot(result: MainResult): void {
+  /**
+   * One identity line, UNKNOWN unreadable, before the startup line. It carries
+   * `sqlstate` only when one is given (S0f).
+   */
+  function expectUnreadableBoot(result: MainResult, sqlstate?: string): void {
     expect(result.timedOut).toBe(false);
     expect(result.signal).toBeNull();
     expect(result.code, result.stderr).toBe(0);
@@ -377,6 +380,11 @@ describe('a failed marker read after the connection opened (S0e round 2)', () =>
       reason: 'unreadable',
     });
     expect(identity[0]).not.toHaveProperty('marker');
+    if (sqlstate === undefined) {
+      expect(identity[0]).not.toHaveProperty('sqlstate');
+    } else {
+      expect(identity[0]?.sqlstate).toBe(sqlstate);
+    }
     expect(identityAt).toBeLessThan(startupAt);
   }
 
@@ -392,6 +400,34 @@ describe('a failed marker read after the connection opened (S0e round 2)', () =>
         });
 
         expectUnreadableBoot(result);
+        expect(server.connections()).toBe(1);
+        expect(server.queries()).toBe(1);
+      } finally {
+        await server.close();
+      }
+    },
+    RUN_LIMIT_MS,
+  );
+
+  it(
+    'an ErrorResponse with SQLSTATE XX000: UNKNOWN unreadable with sqlstate, and no server text (S0f)',
+    async () => {
+      const sentinel = 'server-message-sentinel-e2e-3f7b';
+      const server = await fakePostgres({
+        kind: 'error-on-query',
+        sqlstate: 'XX000',
+        message: `internal error ${sentinel}`,
+      });
+      try {
+        const result = await runMain({
+          DATABASE_URL: server.url,
+          TRADER_MODE: 'paper',
+          DATABASE_IDENTITY: '9d5f0c1e-2b3a-4c5d-8e6f-7a8b9c0d1e2f',
+        });
+
+        expectUnreadableBoot(result, 'XX000');
+        expect(result.stdout).not.toContain(sentinel);
+        expect(result.stderr).not.toContain(sentinel);
         expect(server.connections()).toBe(1);
         expect(server.queries()).toBe(1);
       } finally {

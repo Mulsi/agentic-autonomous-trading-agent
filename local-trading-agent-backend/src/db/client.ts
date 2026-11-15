@@ -4,6 +4,7 @@ import { Pool, type PoolClient, type PoolConfig, type QueryConfig } from 'pg';
 import { databaseTarget } from '../config/secrets.js';
 import type { Settings } from '../config/settings.js';
 import { markerReadFailure, type MarkerRead } from './identity.js';
+import { markerReadFromRows } from './marker-rows.js';
 import * as schema from './schema.js';
 
 // The one place under src/ that opens a database connection. It changes no type
@@ -112,8 +113,9 @@ async function readMarker(
   let read: MarkerRead;
   let broken = false;
   try {
-    const result = await client.query<{ marker: string }>(query);
-    read = { kind: 'rows', markers: result.rows.map((row) => row.marker) };
+    // The rows are external data: unknown until the zod check has read them.
+    const rows: unknown = (await client.query(query)).rows;
+    read = markerReadFromRows(rows);
   } catch (error) {
     // The connection may be mid-query or broken: discard it.
     broken = true;
