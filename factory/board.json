@@ -96,7 +96,7 @@
       "id": "005-database-client",
       "title": "S0e Database client",
       "branch": "factory/005-database-client",
-      "stage": "needs-human",
+      "stage": "merged",
       "round": 2,
       "maxRounds": 3,
       "rounds": [
@@ -119,10 +119,10 @@
         }
       ],
       "gate": "PASS",
-      "needsHuman": true,
-      "reason": "protected paths (.env.example, src/config/, src/db/migrations/), [human] criterion 39 and open decisions; e2e and DB tests to rerun once Docker responds",
+      "needsHuman": false,
+      "reason": "",
       "builder": "ab0ea5262dba638ef",
-      "updatedAt": "2026-11-13T14:32:30Z"
+      "updatedAt": "2026-11-15T16:52:58Z"
     }
   ]
 }
