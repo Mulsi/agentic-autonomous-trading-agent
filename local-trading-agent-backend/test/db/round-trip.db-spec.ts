@@ -258,7 +258,8 @@ describe('int8, jsonb and numeric[] through the raw pool (S0f)', () => {
     expect(result.rows[0]?.j.p).toBe(0.1);
   });
 
-  // The evidence for the numeric-array ban: neither path keeps the strings.
+  // The evidence for the numeric-array ban is the raw pool: pg-types parses
+  // numeric[] (OID 1231) with parseFloat, so money there is a JS number.
   it('numeric[] through the raw pool: JS numbers, not the stored strings', async () => {
     const result = await connection.db.$client.query<{ v: unknown[] }>(
       'SELECT v FROM fx_numeric_array WHERE id = 1',
@@ -269,14 +270,16 @@ describe('int8, jsonb and numeric[] through the raw pool (S0f)', () => {
     expect(values.map((value) => typeof value)).toEqual(['number', 'number']);
   });
 
-  it('numeric[] through Drizzle: strings of those numbers, not the stored ones', async () => {
+  // Drizzle's node-postgres session replaces the OID 1231 parser on its own
+  // queries, so this path keeps the stored text. The ban stands anyway: the
+  // same column read through the raw pool (above) gives JS numbers.
+  it('numeric[] through Drizzle: the identical stored strings', async () => {
     const [row] = await connection.db
       .select({ v: numericArray.v })
       .from(numericArray);
 
-    expect(row?.v).toEqual(['1.1', '-1e-8']);
+    expect(row?.v).toEqual(['1.10', '-0.00000001']);
     expect(row?.v?.map((value) => typeof value)).toEqual(['string', 'string']);
-    expect(row?.v).not.toEqual(['1.10', '-0.00000001']);
   });
 });
 
