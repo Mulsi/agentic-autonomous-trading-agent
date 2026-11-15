@@ -24,12 +24,13 @@ function subsection(markdown: string, heading: string): string {
 }
 
 describe('.env.example', () => {
-  const example = parseEnv(readRepoFile('.env.example'));
+  const text = readRepoFile('.env.example');
+  const example = parseEnv(text);
 
-  it('has exactly DATABASE_URL and TRADER_MODE, the settings schema keys', () => {
+  it('has exactly the settings schema keys: DATABASE_URL, TRADER_MODE and DATABASE_IDENTITY', () => {
     const keys = Object.keys(example).sort();
 
-    expect(keys).toEqual(['DATABASE_URL', 'TRADER_MODE']);
+    expect(keys).toEqual(['DATABASE_IDENTITY', 'DATABASE_URL', 'TRADER_MODE']);
     expect(keys).toEqual(Object.keys(settingsSchema.shape).sort());
   });
 
@@ -37,14 +38,30 @@ describe('.env.example', () => {
     expect(example.TRADER_MODE).toBe('paper');
   });
 
+  it('leaves DATABASE_IDENTITY blank', () => {
+    expect(example.DATABASE_IDENTITY).toBe('');
+    expect(text.split('\n')).toContain('DATABASE_IDENTITY=');
+  });
+
   it('passes parseSettings as it is, with nothing filled in', () => {
-    expect(parseSettings(example)).toEqual(example);
+    expect(parseSettings(example)).toEqual({
+      DATABASE_URL: example.DATABASE_URL,
+      TRADER_MODE: 'paper',
+    });
+    expect(parseSettings(example).DATABASE_IDENTITY).toBeUndefined();
   });
 
   it('keeps the compose database URL', () => {
     expect(example.DATABASE_URL).toBe(
       'postgresql://trader:local-dev-only@127.0.0.1:55432/trader',
     );
+  });
+
+  it('keeps the DATABASE_URL and TRADER_MODE lines unchanged', () => {
+    expect(text.split('\n').slice(0, 2)).toEqual([
+      'DATABASE_URL=postgresql://trader:local-dev-only@127.0.0.1:55432/trader',
+      'TRADER_MODE=paper',
+    ]);
   });
 });
 
@@ -83,13 +100,14 @@ describe('progress.md', () => {
     expect(progress).toMatch(/^- \[x\] S0d /m);
   });
 
-  it('names S0e as next', () => {
-    expect(next).toMatch(/^- S0e /m);
-    expect(progress).not.toMatch(/^- \[x\] S0e /m);
+  it('marks S0e done', () => {
+    expect(progress).toMatch(/^- \[x\] S0e /m);
   });
 
-  it('says S0e remains open under S0', () => {
-    expect(next).toContain('S0e remains open under S0');
+  it('says S0 is complete and names S1a as next', () => {
+    expect(next).toMatch(/^- S1a /m);
+    expect(next).toContain('S0 is complete');
+    expect(next).not.toMatch(/^- S0/m);
   });
 
   it('mentions the digest pin in its Database section', () => {
@@ -118,15 +136,92 @@ describe('progress.md', () => {
     }
   });
 
+  it('names @isaacs/nonrecursive-glob-match as a transitive dev package from @nestjs/cli', () => {
+    const settlement = subsection(
+      section(progress, 'Settlements'),
+      'Dependencies',
+    );
+    const line = settlement
+      .split('\n')
+      .find((text) => text.includes('`@isaacs/nonrecursive-glob-match`'));
+
+    expect(line).toBeDefined();
+    expect(line).toMatch(/transitive/);
+    expect(line).toMatch(/dev/);
+    expect(line).toContain('`@nestjs/cli`');
+  });
+
   it('mentions the value-based scrub in Current state', () => {
     const current = section(progress, 'Current state');
 
     expect(current).toMatch(/scrubbed by value/);
   });
 
-  it('records that .env.example has two keys', () => {
-    expect(progress).toContain('`.env.example` has two keys');
-    expect(progress).not.toContain('`.env.example` has three keys');
+  it('records that .env.example has three keys', () => {
+    expect(progress).toContain('`.env.example` has three keys');
+    expect(progress).not.toContain('`.env.example` has two keys');
+  });
+
+  describe('Current state describes S0e', () => {
+    const current = section(progress, 'Current state');
+
+    it.each([
+      ['the connection at boot', '`src/db/client.ts`'],
+      ['the identity setting', '`DATABASE_IDENTITY`'],
+      ['not_configured', '`not_configured`'],
+      ['missing_marker', '`missing_marker`'],
+      ['mismatch', '`mismatch`'],
+      ['unreadable', '`unreadable`'],
+      ['the setup with docker compose ps', '`docker compose ps`'],
+      ['the research role', '`research_reader`'],
+      ['the _ms rule', '`_ms`'],
+      ['timestamptz', '`timestamptz`'],
+      ['the scrubbed failed-boot output', '`scrubSecrets`'],
+    ])('names %s', (_, needle) => {
+      expect(current).toContain(needle);
+    });
+
+    it('gives the identity setup steps in order', () => {
+      const setup = current.slice(current.indexOf('Setup'));
+      const steps = [
+        '`make db-up`',
+        'identity line',
+        '`docker compose ps`',
+        '`DATABASE_IDENTITY` in `.env`',
+      ].map((needle) => setup.indexOf(needle));
+
+      expect(steps.every((at) => at >= 0)).toBe(true);
+      expect([...steps].sort((a, b) => a - b)).toEqual(steps);
+    });
+
+    it("limits the setup to a database's first run, and never copies a mismatch marker (S0e round 2)", () => {
+      const setup = current.slice(current.indexOf('Setup'));
+
+      expect(setup).toMatch(/^Setup, only for a database's first run/);
+      expect(setup).toMatch(
+        /a `mismatch` or `missing_marker` is an incident, not a setup step \(Rule 9/,
+      );
+      expect(setup).toContain(
+        'Never copy the marker printed on a `mismatch` line into `.env`',
+      );
+    });
+  });
+
+  it('records the hand-offs to S7a, S7b, S11a and S12', () => {
+    const handOff = subsection(
+      section(progress, 'Settlements'),
+      'Hand-offs from S0e',
+    );
+
+    for (const needle of [
+      'S7a',
+      'S7b',
+      'S11a',
+      'S12',
+      'kill_on_database_integrity_failure',
+    ]) {
+      expect(handOff).toContain(needle);
+    }
   });
 
   it.each([

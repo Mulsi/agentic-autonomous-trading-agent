@@ -17,6 +17,13 @@ import {
 } from '../../fixtures/env.js';
 import { captureStream, expectClean, REDACTED } from '../../fixtures/logs.js';
 
+// No Postgres in `pnpm test`: the boot's connection is substituted on the test
+// side (test/fixtures/database.ts). Production code has no switch for this.
+vi.mock(import('../../../src/db/client.js'), async (importOriginal) => {
+  const { fakeConnectDatabase } = await import('../../fixtures/database.js');
+  return { ...(await importOriginal()), connectDatabase: fakeConnectDatabase };
+});
+
 // The real parseSettings, wrapped so the test can count boot-time parses.
 vi.mock(import('../../../src/config/settings.js'), async (importOriginal) => {
   const actual = await importOriginal();

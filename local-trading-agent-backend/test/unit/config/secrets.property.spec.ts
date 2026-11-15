@@ -180,6 +180,17 @@ describe('the DATABASE_URL generator reaches the boundary', () => {
     },
   );
 
+  it('the shape "query or fragment" occurs, and always fails (S0e round 2)', () => {
+    const hits = values.filter(({ shapes }) =>
+      shapes.includes('query or fragment'),
+    );
+
+    expect(hits.length).toBeGreaterThan(0);
+    for (const { value } of hits) {
+      expect(settingsFor(value), JSON.stringify(value)).toBeUndefined();
+    }
+  });
+
   it('fully random strings are part of the mix', () => {
     const random = values.filter(({ shapes }) => shapes.includes('random'));
 

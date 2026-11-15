@@ -24,6 +24,7 @@ export type UrlShape =
   | 'port out of range'
   | 'unclosed IPv6 bracket'
   | 'space in host'
+  | 'query or fragment'
   | 'near miss'
   | 'random';
 
@@ -178,23 +179,44 @@ const port: fc.Arbitrary<Part> = fc.oneof(
   { arbitrary: fc.constant(part(':')), weight: 1 },
 );
 
+/** The path, optional. */
+const path = fc.oneof(
+  fc.constantFrom('', '/', '/trader'),
+  fc.string({ unit: 'grapheme', maxLength: 12 }).map((s) => `/${s}`),
+);
+const query = fc
+  .string({ unit: 'grapheme-ascii', maxLength: 12 })
+  .map((s) => `?${s}`);
+const fragment = fc
+  .string({ unit: 'grapheme', maxLength: 8 })
+  .map((s) => `#${s}`);
+
 /** Path, query string and fragment, each optional. */
 const tail: fc.Arbitrary<Part> = fc
   .tuple(
-    fc.oneof(
-      fc.constantFrom('', '/', '/trader'),
-      fc.string({ unit: 'grapheme', maxLength: 12 }).map((s) => `/${s}`),
-    ),
-    fc.option(
-      fc.string({ unit: 'grapheme-ascii', maxLength: 12 }).map((s) => `?${s}`),
-      { freq: 2, nil: '' },
-    ),
-    fc.option(
-      fc.string({ unit: 'grapheme', maxLength: 8 }).map((s) => `#${s}`),
-      { freq: 2, nil: '' },
-    ),
+    path,
+    fc.option(query, { freq: 2, nil: '' }),
+    fc.option(fragment, { freq: 2, nil: '' }),
   )
-  .map(([path, query, fragment]) => part(path + query + fragment));
+  .map(([p, q, f]) => part(p + q + f));
+
+/**
+ * A query string, a fragment or both, never neither. The settings refuse a
+ * DATABASE_URL that has either (S0e round 2), so these are near misses.
+ */
+const queryOrFragment: fc.Arbitrary<Part> = fc
+  .oneof(
+    query,
+    fragment,
+    fc.tuple(query, fragment).map(([q, f]) => q + f),
+  )
+  .map((text) => part(text, 'query or fragment'));
+
+/** Shapes a near miss keeps: each one always fails parseSettings. */
+export const ALWAYS_FAILING_SHAPES: readonly UrlShape[] = [
+  ...UNPARSEABLE_SHAPES,
+  'query or fragment',
+];
 
 const wellFormed: fc.Arbitrary<Part> = fc
   .tuple(
@@ -202,7 +224,7 @@ const wellFormed: fc.Arbitrary<Part> = fc
     userinfo,
     host,
     port,
-    tail,
+    path.map((text) => part(text)),
     // A tab, LF or CR inside the scheme or right after `://`, where neither
     // trim can reach it.
     fc.oneof(
@@ -258,6 +280,12 @@ const nearMiss: fc.Arbitrary<Part> = fc
       .tuple(scheme, userinfo, fc.domain(), fc.domain(), port, tail)
       .map(([s, u, a, b, p, t]) =>
         join([s, part('://'), u, part(`${a} ${b}`, 'space in host'), p, t]),
+      ),
+    // A well-formed URL with a query string or a fragment.
+    fc
+      .tuple(scheme, userinfo, host, port, path, queryOrFragment)
+      .map(([s, u, h, p, pa, qf]) =>
+        join([s, part('://'), u, h, p, part(pa), qf]),
       ),
     // A scheme that is not postgres or postgresql.
     fc
@@ -325,7 +353,7 @@ const nearMiss: fc.Arbitrary<Part> = fc
     part(
       built.text,
       'near miss',
-      ...built.shapes.filter((shape) => UNPARSEABLE_SHAPES.includes(shape)),
+      ...built.shapes.filter((shape) => ALWAYS_FAILING_SHAPES.includes(shape)),
     ),
   );
 

@@ -26,6 +26,41 @@ export function secretValues(settings: Settings): string[] {
   return longestFirst(values);
 }
 
+/** Where the database client connects, read from `DATABASE_URL` alone. */
+export interface DatabaseTarget {
+  /** The host, percent-decoded where it decodes, without IPv6 brackets. */
+  host: string;
+  /** The port as written, or undefined when the URL has none. */
+  port: number | undefined;
+  /** The user name, percent-decoded where it decodes. Empty when absent. */
+  user: string;
+  /**
+   * The password the client sends: decoded, or as the URL parser normalizes it
+   * when it does not decode. Both are forms `secretValues` returns, so the
+   * scrub covers whatever the client holds. Empty when absent.
+   */
+  password: string;
+  /** The path without its leading slash, decoded where it decodes. */
+  database: string;
+}
+
+/**
+ * The connection target in `DATABASE_URL`, parsed by the same WHATWG parser as
+ * `secretValues`. The query string and fragment are ignored. It never throws
+ * for a URL that `parseSettings` accepted, and throws `SettingsError` otherwise.
+ */
+export function databaseTarget(url: string): DatabaseTarget {
+  const parsed = parseUrl(url);
+  if (parsed === undefined) throw new SettingsError(['DATABASE_URL']);
+  return {
+    host: decodedOrAsIs(parsed.hostname.replace(/^\[(.*)\]$/, '$1')),
+    port: parsed.port === '' ? undefined : Number(parsed.port),
+    user: decodedOrAsIs(parsed.username),
+    password: decodedOrAsIs(parsed.password),
+    database: decodedOrAsIs(parsed.pathname.slice(1)),
+  };
+}
+
 /**
  * Replaces every occurrence of every value in `text` with `[REDACTED]`, longest
  * value first, so a URL is replaced whole before its password is. The empty
@@ -67,6 +102,10 @@ function decodeOrUndefined(password: string): string | undefined {
     // Not valid percent-encoding: the raw and normalized forms still cover it.
     return undefined;
   }
+}
+
+function decodedOrAsIs(text: string): string {
+  return decodeOrUndefined(text) ?? text;
 }
 
 function jsonEscaped(value: string): string {
