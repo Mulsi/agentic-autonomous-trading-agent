@@ -17,7 +17,7 @@ pnpm test        # vitest
 pnpm lint        # eslint, type-aware
 pnpm typecheck   # tsc --noEmit over src/, test/ and spec files
 pnpm build       # typecheck, then nest build
-pnpm test:e2e    # run pnpm build first
+pnpm test:e2e    # run pnpm build and make db-up first
 pnpm db:migrate  # apply committed migrations to DATABASE_URL from the process env
 pnpm test:db     # throwaway trader_test_* databases; run make db-up first
 make db-up       # repo root: Postgres 16 in Docker, then pnpm db:migrate
