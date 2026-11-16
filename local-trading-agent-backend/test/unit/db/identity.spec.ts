@@ -120,19 +120,28 @@ describe('decideIdentity', () => {
       fc.string({ unit: 'binary', maxLength: 40 }),
       fc.constantFrom('', ' ', MARKER, MARKER.toUpperCase(), ` ${MARKER}`),
     );
+    // S0g: failed reads that carry a sqlstate too, so "a failed read is never
+    // VERIFIED" is pinned for both failed shapes, not only by the case table.
     const read: fc.Arbitrary<MarkerRead> = fc.oneof(
       fc.constant<MarkerRead>({ kind: 'no_table' }),
       fc.constant<MarkerRead>({ kind: 'failed' }),
       fc
+        .stringMatching(/^[0-9A-Z]{5}$/)
+        .map((sqlstate): MarkerRead => ({ kind: 'failed', sqlstate })),
+      fc
         .array(value, { maxLength: 3 })
         .map((markers) => ({ kind: 'rows' as const, markers })),
     );
+    let failedWithSqlstate = 0;
 
     fc.assert(
       fc.property(
         fc.option(value, { nil: undefined }),
         read,
         (expected, marker) => {
+          if (marker.kind === 'failed' && marker.sqlstate !== undefined) {
+            failedWithSqlstate += 1;
+          }
           const configured = expected !== undefined && expected.trim() !== '';
           const single =
             marker.kind === 'rows' && marker.markers.length === 1
@@ -148,6 +157,7 @@ describe('decideIdentity', () => {
       ),
       { numRuns: 2_000 },
     );
+    expect(failedWithSqlstate).toBeGreaterThan(0);
   });
 });
 

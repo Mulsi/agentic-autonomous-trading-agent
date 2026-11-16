@@ -34,10 +34,12 @@ const MIRROR_DEPTH = 16;
  * string value it reaches: own properties (enumerable or not, so `message`,
  * `stack`, `cause` and an AggregateError's `errors` too), array elements, and
  * Map and Set entries. Prototypes stay, so class names print unchanged, and
- * cycles stay cycles. Getters are copied, never called. Built-ins with internal
- * state (Date, RegExp, Buffer, Promise, a Proxy, ...) are passed through as
- * they are. Property names are not scrubbed. With no recorded secrets, or if
- * copying fails, `value` itself comes back. Never throws.
+ * cycles stay cycles. Getters are copied, not called, except an Error's own
+ * `stack`, which is read once, as `inspect` reads it, even when it is a
+ * user-defined accessor. Built-ins with internal state (Date, RegExp, Buffer,
+ * Promise, a Proxy, ...) are passed through as they are. Property names are not
+ * scrubbed. With no recorded secrets, or if copying fails, `value` itself comes
+ * back. Never throws.
  */
 export function scrubbedForInspect(
   value: unknown,
@@ -76,7 +78,8 @@ export function scrubbedForInspect(
       const descriptor = Object.getOwnPropertyDescriptor(item, key);
       if (descriptor === undefined) continue;
       if (isError(item) && key === 'stack') {
-        // V8 keeps `stack` behind its own accessor; inspect reads it anyway.
+        // The one getter called: V8 keeps `stack` behind its own accessor, and
+        // a user may define one. Read once, as inspect reads it anyway.
         descriptor.value = visit(Reflect.get(item, 'stack'), depth + 1);
         descriptor.writable = true;
         delete descriptor.get;

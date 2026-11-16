@@ -23,6 +23,7 @@ The app is a standalone Nest application context in `local-trading-agent-backend
 
   In an existing checkout, the next `make db-up` after the image line changes recreates the container on the pinned image and keeps the `pgdata` volume, so the data and the migration rows stay.
 - `make db-up` finds Docker even when it is not on `PATH`, starts Postgres, waits until it is healthy, installs dependencies and runs `pnpm db:migrate` against the compose database. It is safe to run again, it never reads `.env`, and any failure exits non-zero.
+  - Before starting Postgres it reads the image reference with `docker compose config --images` (S0g). When Docker already has that exact reference, it starts with `--pull never`, because a pull can hang in Docker's credential helper even for a local image. Otherwise it pulls as before, so a clean checkout still works. Compose's default policy is not enough on its own: it pulls a digest-pinned image whose local tag differs. A failed, empty or multi-word read stops the target with a `db-up:` message.
 - Drizzle lives in the app folder: `drizzle.config.ts`, `src/db/schema.ts` (the identity marker table only) and `src/db/migrations/` (protected by the gate): the empty `0000_init`, the marker table, the marker row, and the research role.
 - `pnpm db:generate` runs `drizzle-kit generate`. `pnpm db:migrate` applies the committed migrations to the database named by `DATABASE_URL` in the process environment, and fails when it is unset. Both set `DOTENV_CONFIG_PATH=/dev/null`, because drizzle-kit otherwise loads a `.env` from its working directory. No script uses `drizzle-kit push`.
 - `pnpm test:db` runs `test/**/*.db-spec.ts` against the compose Postgres. Each test works in a throwaway `trader_test_*` database and drops it afterwards; a guard in `test/fixtures/db.ts` refuses any other name. `pnpm test` collects no DB spec and needs no database: unit tests that boot `AppModule` substitute the connection on the test side. `pnpm test:e2e` now needs `make db-up`, because a successful boot needs a migrated database; its cases run on throwaway databases too.
@@ -63,12 +64,13 @@ The app is a standalone Nest application context in `local-trading-agent-backend
 - [x] S0d Dependency cleanup: Express, `multer` and the rest of the HTTP adapter out of the installed tree, `@nestjs/mau` and the `deploy` script removed, a fresh lockfile, TypeScript pinned inside the typescript-eslint peer range, the esbuild advisory decided, the compose image pinned by digest, and a fast-check property for boot availability
 - [x] S0e Database client: the first connection through `src/db/client.ts`, the database identity marker and its boot check, the `research_reader` role, the column conventions, scrubbed failed-boot output, the D9 dependency test
 - [x] S0f Database client follow-ups: `sqlstate` on the `unreadable` identity line, a zod check on the marker rows, the value scrub before `util.inspect` on both failed-boot printers, the schema scan as an allow-list with the integer, array, `jsonb` and server-filled `precision` rules, and the raw-pool `int8` and D12 evidence
+- [x] S0g Small fixes: `make db-up` starts with `--pull never` when the pinned image is already local, the identity property also draws failed reads that carry a `sqlstate`, and the `scrubbedForInspect` comment names its one called getter, an Error's own `stack`
 
 ## Next
 
 - S1a Normalizer and validator: ms and µs timestamps (D12), duplicates, ordering, gaps, staleness, OHLC sanity, outliers, quarantine.
 
-S0 is complete: S0a to S0e have merged, and every S0 "Done when" command works from a clean checkout.
+S0 is complete: S0a to S0g have merged, and every S0 "Done when" command works from a clean checkout.
 
 ## Settlements
 

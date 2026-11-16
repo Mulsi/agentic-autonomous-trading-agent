@@ -13,6 +13,7 @@ import {
   type Settings,
 } from '../../../src/config/settings.js';
 import { REDACTED } from '../../fixtures/logs.js';
+import { readAppFile } from '../../fixtures/repo.js';
 
 // S0f: both failed-boot printers turn values into text with util.inspect, which
 // escapes quotes and control characters its own way and splits a long string
@@ -384,5 +385,124 @@ describe('nothing else changes', () => {
     const value = { a: 1 };
 
     expect(scrubbedForInspect(value, [])).toBe(value);
+  });
+});
+
+// S0g: the doc comment said getters are never called. One is: an Error's own
+// `stack`, even a user-defined accessor, is read once, as inspect reads it.
+// These pin that exception and its limits; the behaviour does not change.
+describe("scrubbedForInspect reads only an Error's own stack getter (S0g)", () => {
+  const secret = 'stack-getter-sentinel-8d2f';
+
+  function errorWithStackGetter(): {
+    error: Error;
+    stackGetter: () => string;
+    stackCalls: () => number;
+    detailCalls: () => number;
+  } {
+    let stack = 0;
+    let detail = 0;
+    const error = new Error('boom');
+    const stackGetter = (): string => {
+      stack += 1;
+      return `Error: boom ${secret}\n    at fixture (fixture.ts:1:1)`;
+    };
+    Object.defineProperty(error, 'stack', {
+      get: stackGetter,
+      configurable: true,
+    });
+    Object.defineProperty(error, 'detail', {
+      get: (): string => {
+        detail += 1;
+        return secret;
+      },
+      configurable: true,
+      enumerable: true,
+    });
+    return {
+      error,
+      stackGetter,
+      stackCalls: () => stack,
+      detailCalls: () => detail,
+    };
+  }
+
+  it('calls a user-defined own stack getter on an Error exactly once', () => {
+    const { error, stackGetter, stackCalls } = errorWithStackGetter();
+
+    scrubbedForInspect(error, [secret]);
+
+    expect(stackCalls()).toBe(1);
+    expect(stackGetter()).toContain(secret);
+  });
+
+  it('copies that stack as a scrubbed data property and leaves the original accessor', () => {
+    const { error, stackGetter } = errorWithStackGetter();
+
+    const copy = scrubbedForInspect(error, [secret]) as Error;
+    const copied = Object.getOwnPropertyDescriptor(copy, 'stack');
+    const original = Object.getOwnPropertyDescriptor(error, 'stack');
+
+    expect(copied).toBeDefined();
+    expect(copied).not.toHaveProperty('get');
+    expect(copied).toHaveProperty('value');
+    expect(copied?.value).toContain(REDACTED);
+    expect(copied?.value).not.toContain(secret);
+    expect(original).toHaveProperty('get', stackGetter);
+    expect(original).not.toHaveProperty('value');
+  });
+
+  it('does not call another own getter on the same Error', () => {
+    const { error, detailCalls } = errorWithStackGetter();
+
+    const copy = scrubbedForInspect(error, [secret]) as Error;
+
+    expect(detailCalls()).toBe(0);
+    // The same descriptor, so the same getter function, uncalled.
+    expect(Object.getOwnPropertyDescriptor(copy, 'detail')).toStrictEqual(
+      Object.getOwnPropertyDescriptor(error, 'detail'),
+    );
+  });
+
+  it('does not call an own stack getter on an object that is not an Error', () => {
+    let calls = 0;
+    const value = {
+      get stack(): string {
+        calls += 1;
+        return secret;
+      },
+    };
+
+    const copy = scrubbedForInspect(value, [secret]);
+
+    expect(calls).toBe(0);
+    expect(Object.getOwnPropertyDescriptor(copy, 'stack')).toHaveProperty(
+      'get',
+    );
+  });
+
+  it('the doc comment names the stack exception next to the getter rule', () => {
+    const source = readAppFile('src/config/boot-output.ts');
+    const at = source.indexOf('export function scrubbedForInspect(');
+    const before = source.slice(0, at);
+    const open = before.lastIndexOf('/**');
+    const close = before.lastIndexOf('*/');
+    const block = before.slice(open, close + 2);
+    const text = block
+      .split('\n')
+      .map((line) => line.replace(/^\s*\/?\*+\/?\s?/, ''))
+      .join(' ');
+    const sentences = text.split(/(?<=\.)\s+/);
+
+    expect(at).toBeGreaterThan(0);
+    expect(open).toBeGreaterThanOrEqual(0);
+    expect(before.slice(close + 2)).toMatch(/^\s*$/);
+    expect(block).not.toContain('Getters are copied, never called.');
+    expect(text).not.toContain('Getters are copied, never called.');
+    expect(
+      sentences.some(
+        (sentence) => /getter/i.test(sentence) && /`stack`/.test(sentence),
+      ),
+    ).toBe(true);
   });
 });
