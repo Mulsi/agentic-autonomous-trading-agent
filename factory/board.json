@@ -151,7 +151,7 @@
       "id": "007-small-fixes",
       "title": "S0g Small fixes",
       "branch": "factory/007-small-fixes",
-      "stage": "needs-human",
+      "stage": "merged",
       "round": 1,
       "maxRounds": 2,
       "rounds": [
@@ -165,10 +165,10 @@
         }
       ],
       "gate": "PASS",
-      "needsHuman": true,
-      "reason": "protected path (src/config/boot-output.ts, comments only)",
+      "needsHuman": false,
+      "reason": "",
       "builder": "a1766fe5d743ae1e4",
-      "updatedAt": "2026-11-16T12:57:34Z"
+      "updatedAt": "2026-11-16T13:01:10Z"
     }
   ]
 }
