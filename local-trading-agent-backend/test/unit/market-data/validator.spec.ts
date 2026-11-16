@@ -364,7 +364,7 @@ describe('outliers (criterion 14, window 4, multiple 5)', () => {
     ).toBe(true);
   });
 
-  it('a sustained rise in volatility does not cascade', () => {
+  it('a sustained rise in volatility flags only the first bars, up to half a window plus one', () => {
     const wide = (i: number): unknown[] =>
       msRow(slot(i), STEP, {
         open: '100',
@@ -451,6 +451,126 @@ describe('outliers (criterion 14, window 4, multiple 5)', () => {
     );
 
     expect(batch.quarantined.map(({ reason }) => reason)).toEqual(['outlier']);
+  });
+});
+
+describe('the outlier rule after a run of zero-range bars (round 2)', () => {
+  /** A zero-range bar at 100: o = h = l = c = the previous close. */
+  const flat = (i: number): unknown[] =>
+    msRow(slot(i), STEP, {
+      open: '100',
+      high: '100',
+      low: '100',
+      close: '100',
+    });
+
+  function run(rows: unknown[][], window: number, multiple: number) {
+    return validateKlines(
+      rows,
+      options({
+        range: { fromMs: slot(0), toMs: slot(rows.length) },
+        asOfMs: slot(rows.length),
+        outlier: { window, maxRangeMultiple: multiple },
+      }),
+    );
+  }
+
+  it('10 flat bars then 10 normal ones (window 8, multiple 10): nothing is flagged', () => {
+    const rows = [
+      ...Array.from({ length: 10 }, (_, i) => flat(i)),
+      ...Array.from({ length: 10 }, (_, i) => calm(10 + i)),
+    ];
+    const batch = run(rows, 8, 10);
+
+    expect(batch.quarantined).toEqual([]);
+    expect(batch.missing).toEqual([]);
+    expect(openTimes(batch.candles)).toEqual(
+      Array.from({ length: 20 }, (_, i) => slot(i)),
+    );
+    // 0 to 8 are warm-up. 9 to 13 have a zero median: at slot 13 five of the
+    // eight earlier ratios are still zero. From slot 14 the median is
+    // non-zero and the normal bars are judged and accepted.
+    expect(batch.unjudged).toEqual(
+      Array.from({ length: 14 }, (_, i) => slot(i)),
+    );
+  });
+
+  it("slots 10 to 13 of the reviewers' probe, flagged before round 2, are accepted", () => {
+    // The probe from the round-1 reviews, recomputed by hand: at slots 10 to
+    // 13 the window median is 0 and each calm ratio 0.01 > 10 x 0. Those four
+    // slots are exactly the ones that are now unjudged instead.
+    const rows = [
+      ...Array.from({ length: 10 }, (_, i) => flat(i)),
+      ...Array.from({ length: 10 }, (_, i) => calm(10 + i)),
+    ];
+    const batch = run(rows, 8, 10);
+
+    for (const i of [10, 11, 12, 13]) {
+      expect(batch.unjudged).toContain(slot(i));
+      expect(openTimes(batch.candles)).toContain(slot(i));
+    }
+  });
+
+  it('a genuine spike right after a flat run is accepted and listed as unjudged', () => {
+    // Decision: with a zero median there is no scale, so the spike cannot be
+    // judged. It still passed every row and batch check. The bars after it
+    // are judged again once the median is non-zero (slot 14).
+    const spike = msRow(slot(10), STEP, {
+      open: '100',
+      high: '110',
+      low: '90',
+      close: '100',
+    });
+    const rows = [
+      ...Array.from({ length: 10 }, (_, i) => flat(i)),
+      spike,
+      ...Array.from({ length: 9 }, (_, i) => calm(11 + i)),
+    ];
+    const batch = run(rows, 8, 10);
+
+    expect(batch.quarantined).toEqual([]);
+    expect(openTimes(batch.candles)).toContain(slot(10));
+    expect(batch.unjudged).toEqual(
+      Array.from({ length: 14 }, (_, i) => slot(i)),
+    );
+  });
+
+  it('a spike once the median is non-zero again is still flagged', () => {
+    const spike = msRow(slot(16), STEP, {
+      open: '100',
+      high: '110',
+      low: '90',
+      close: '100',
+    });
+    const rows = [
+      ...Array.from({ length: 10 }, (_, i) => flat(i)),
+      ...Array.from({ length: 6 }, (_, i) => calm(10 + i)),
+      spike,
+      calm(17),
+    ];
+    const batch = run(rows, 8, 10);
+
+    expect(
+      batch.quarantined.map(({ reason, openTimeMs }) => [reason, openTimeMs]),
+    ).toEqual([['outlier', slot(16)]]);
+  });
+
+  it('a zero-median bar still goes through every other check', () => {
+    const rows: unknown[][] = [
+      ...Array.from({ length: 10 }, (_, i) => flat(i)),
+      msRow(slot(10), STEP, {
+        open: '100',
+        high: '99',
+        low: '98',
+        close: '100',
+      }),
+    ];
+    const batch = run(rows, 8, 10);
+
+    expect(batch.quarantined.map(({ reason }) => reason)).toEqual([
+      'ohlc_inconsistent',
+    ]);
+    expect(batch.missing).toEqual([{ fromMs: slot(10), toMs: slot(11) }]);
   });
 });
 

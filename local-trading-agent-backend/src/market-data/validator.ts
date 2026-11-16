@@ -65,7 +65,10 @@ export interface KlineBatch {
   readonly quarantined: readonly QuarantineRecord[];
   /** Expected slots with no accepted candle, as maximal ranges. */
   readonly missing: readonly MissingRange[];
-  /** Open times of accepted candles the outlier rule could not judge yet. */
+  /**
+   * Open times of accepted candles the outlier rule could not judge: too few
+   * earlier bars, or a zero reference median (after a run of zero-range bars).
+   */
   readonly unjudged: readonly number[];
   readonly duplicatesCollapsed: number;
   readonly outOfOrder: number;
@@ -164,12 +167,29 @@ function median(values: readonly Decimal[]): Decimal {
   return lower.plus(upper).div(2);
 }
 
-type Verdict = 'accepted' | 'outlier' | 'unjudged';
+/**
+ * Why a bar was or was not judged. Both unjudged cases are accepted and listed
+ * in `unjudged`; the result does not carry the reason.
+ * - `warm_up`: fewer than `window + 1` bars before it.
+ * - `zero_median`: the median of the previous `window` ratios is zero, for
+ *   example after a halt or a run of zero-trade bars where o = h = l = c =
+ *   the previous close. There is no scale to judge against, and any floor
+ *   would be an invented threshold, so the bar is not flagged.
+ */
+type Verdict =
+  'accepted' | 'outlier' | 'unjudged_warm_up' | 'unjudged_zero_median';
 
 /**
  * Causal outlier verdicts for the batch bars, which follow `history` in
- * `series`. Bar `k` is judged only from bars `0..k`, and flagged bars stay in
- * the series as reference points, so a level shift cannot cascade.
+ * `series`. Bar `k` is judged only from bars `0..k`. Flagged bars stay in the
+ * series as reference points. What that guarantees:
+ * - A single shock (a spike or a level shift) moves the median by at most one
+ *   ratio, so the bars after it are judged against their normal scale.
+ * - After a lasting rise in bar range, at most `floor(window / 2) + 1` bars of
+ *   the new range are flagged (with `maxRangeMultiple >= 1`); by then the
+ *   median holds the new range.
+ * - After a run of zero-range bars, no bar is flagged for the zero median:
+ *   bars stay unjudged until the median is non-zero again.
  */
 function outlierVerdicts(
   series: readonly Candle[],
@@ -186,10 +206,14 @@ function outlierVerdicts(
   const verdicts: Verdict[] = [];
   for (let k = firstBatchIndex; k < series.length; k += 1) {
     if (k < window + 1) {
-      verdicts.push('unjudged');
+      verdicts.push('unjudged_warm_up');
       continue;
     }
     const reference = median(ratios.slice(k - window, k));
+    if (reference.isZero()) {
+      verdicts.push('unjudged_zero_median');
+      continue;
+    }
     const ratio = ratios[k] as Decimal;
     verdicts.push(ratio.gt(multiple.times(reference)) ? 'outlier' : 'accepted');
   }
@@ -301,7 +325,9 @@ export function validateKlines(
       return;
     }
     candles.push(candle);
-    if (verdict === 'unjudged') unjudged.push(candle.openTimeMs);
+    if (verdict === 'unjudged_warm_up' || verdict === 'unjudged_zero_median') {
+      unjudged.push(candle.openTimeMs);
+    }
   });
 
   // 7. Missing: expected slots are those closed by asOfMs.

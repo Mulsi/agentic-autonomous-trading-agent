@@ -63,7 +63,8 @@ S1a added the first market-data code: pure TypeScript with no Nest, database, ne
 - `validator.ts` in `src/market-data/`:
   - `validateKlines(rows, options)` checks a batch against the caller's `asOfMs` and a half-open `range`. Every input row lands in exactly one of `candles` (accepted, closed), `open` (valid but not closed at `asOfMs`), `quarantined`, or the `duplicatesCollapsed` count.
   - Batch reasons: `future_bar`, `outside_range`, `duplicate_conflict` (copies of one slot that differ: every copy is quarantined) and `outlier`. Identical copies collapse to one. Out-of-order rows are sorted and counted in `outOfOrder`, not quarantined.
-  - Outliers: a causal true-range ratio against the median of the previous `window` ratios, in `Decimal`. `outlier.window` and `outlier.maxRangeMultiple` are required arguments with no default. Bars the rule cannot judge yet are accepted and listed in `unjudged`; `history` (a previous batch's `checked` tail) lets the rule judge from the first bar. A quarantine record keeps the raw row, and the candle when it parsed.
+  - Outliers: a causal true-range ratio against the median of the previous `window` ratios, in `Decimal`. `outlier.window` and `outlier.maxRangeMultiple` are required arguments with no default. A bar the rule cannot judge is accepted and listed in `unjudged`: either fewer than `window + 1` bars precede it, or the median is zero, as after a halt or a run of zero-trade bars (S1a round 2). A bar with a zero median is never flagged, a genuine spike included; it still goes through every other check. `history` (a previous batch's `checked` tail) lets the rule judge from the first bar. A quarantine record keeps the raw row, and the candle when it parsed.
+  - What the outlier rule guarantees: flagged bars stay in the reference series, so one spike or level shift does not change the scale later bars are judged against. A lasting rise in bar range is not absorbed at once: with `maxRangeMultiple` of at least 1, up to `floor(window / 2) + 1` bars of the new range are flagged before the median holds it, so a production window of about 96 on 15m could flag about 12 hours. Those slots are missing, so entries are blocked and the candles stay readable in `quarantined[].candle`.
   - `missing` lists every expected slot (aligned, in range, closed by `asOfMs`) with no accepted candle, as maximal half-open ranges. A quarantined slot is missing. Nothing is filled or interpolated. `missingRanges` is the generic gap function, for any regular series such as the 5-minute metrics.
   - `freshness` (`newestCloseMs`, `asOfMs`, `maxAgeMs`) gives `FRESH`, `STALE`, or `UNKNOWN` (`no_data`, `clock_skew`); `freshnessBlocksEntries` is true for everything but `FRESH`. `maxAgeMs` has no default.
   - Argument errors (an unknown interval, an unaligned or reversed range, a non-integer `asOfMs`, bad outlier options or `maxAgeMs`, inconsistent `history`) throw a `TypeError` or `RangeError` naming the argument. Row content never throws.
@@ -117,12 +118,21 @@ typescript-eslint with type-aware rules replaces oxlint, following D2. `no-expli
 ### Market data
 
 - **Quarantine is a result type, not a table (S1a).** Validation is calculation code that the replay calls without a database (§4, D13), and §7 lists no quarantine table. `validateKlines` returns every quarantined row with its reason, its raw input and, when it parsed, its candle, so the caller can log, store or report it without validating again.
-- **Choices from the plan's intent.** Out-of-order rows are sorted and counted, not quarantined: a bar's own open time fixes its slot. Conflicting duplicates quarantine every copy and the slot becomes missing. Outlier-flagged bars stay in the reference series, so a level shift flags at most the bars around it. A row that fails a row check carries no candle in its record.
+- **Choices from the plan's intent.** Out-of-order rows are sorted and counted, not quarantined: a bar's own open time fixes its slot. Conflicting duplicates quarantine every copy and the slot becomes missing. Outlier-flagged bars stay in the reference series. A zero reference median leaves the bar unjudged instead of flagged (S1a round 2), so a flat run never flags the bars after it. A lasting rise in bar range still flags up to `floor(window / 2) + 1` bars before the median moves; the rule does not promise more than that. A row that fails a row check carries no candle in its record.
 - **Hand-offs.**
-  - **S1b:** whether and where quarantined rows are stored, and the migration for it (human); production values for `outlier.window` and `outlier.maxRangeMultiple`, from config and marked provisional; row schemas for premium-index klines (signed values), funding and metrics (`create_time` datetime strings); CSV header handling.
-  - **S1c and S1d:** map the REST and WebSocket `k` payloads into the row shape or a `Candle`, and pass `history` from the previous batch's `checked`.
+  - **S1b:**
+    - whether and where quarantined rows are stored, and the migration for it (human). Storage keeps the raw row as data: parameterized inserts only, never formatted into a log line, and never given to Claude as instructions (Rule 11; security review 2).
+    - production values for `outlier.window` and `outlier.maxRangeMultiple`, from config and marked provisional, fit on the train split.
+    - whether a bar whose predecessor in the series lies across a gap of missing slots is judged at all, or left unjudged instead of measured against a stale close (quant review 2).
+    - the metrics row schema quarantines rows whose time is off the 5-minute grid, instead of leaving `missingRanges` to drop them silently (quant review 3).
+    - row schemas for premium-index klines (signed values), funding and metrics (`create_time` datetime strings); CSV header handling.
+  - **S1c and S1d:**
+    - map the REST and WebSocket `k` payloads into the row shape or a `Candle`.
+    - cap payload and field length where data comes in; `parseNonNegativeDecimal` has no length limit (security review 1).
+    - pass only the previous batch's `checked` output as `history`; history prices are not re-validated (security review 3).
+    - a bar counts as closed only by the exchange's signal (the WebSocket `x` flag, or exchange server time with a short delay), not by the local clock alone, and a provisional and a final copy of one bar never land in the same batch, where they would be a `duplicate_conflict` (risk review 2, quant review 4).
   - **S3 and S7a:** take `maxAgeMs` from config, and treat `freshnessBlocksEntries` and `missing` slots as UNKNOWN.
-  - **S10b:** the emergency rules read outlier-quarantined candles from `quarantined[].candle`, so a real crash bar flagged as an outlier still reaches the exit side.
+  - **S10b:** the emergency exits read outlier-flagged candles from the quarantine record (`quarantined[].candle`), so a real crash bar flagged as an outlier is never hidden from the exit side.
 
 ### Dependencies
 

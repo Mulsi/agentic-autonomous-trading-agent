@@ -425,6 +425,145 @@ describe('no look-ahead (criterion 20)', () => {
   });
 });
 
+/** Hundredths written as a decimal string: 10007 is "100.07". */
+function hundredths(n: number): string {
+  return `${Math.floor(n / 100)}.${String(n % 100).padStart(2, '0')}`;
+}
+
+/** A row for slot `k` from prices in hundredths. */
+function hundredthsRow(
+  k: number,
+  open: number,
+  high: number,
+  low: number,
+  close: number,
+): unknown[] {
+  const openMs = slot(k);
+  return [
+    openMs,
+    hundredths(open),
+    hundredths(high),
+    hundredths(low),
+    hundredths(close),
+    '10.00000000',
+    openMs + STEP - 1,
+    '1000.00000000',
+    100,
+    '5.00000000',
+    '500.00000000',
+    '0',
+  ];
+}
+
+describe('outliers after a flat run and after a range change (round 2)', () => {
+  /** A normal bar: high strictly above low, open and close inside. */
+  const normalBar = fc
+    .record({
+      low: fc.integer({ min: 5_000, max: 15_000 }),
+      range: fc.integer({ min: 1, max: 3_000 }),
+      openAt: fc.integer({ min: 0, max: 100 }),
+      closeAt: fc.integer({ min: 0, max: 100 }),
+    })
+    .map(({ low, range, openAt, closeAt }) => ({
+      open: low + Math.floor((range * openAt) / 100),
+      high: low + range,
+      low,
+      close: low + Math.floor((range * closeAt) / 100),
+    }));
+
+  it('a flat run followed by normal bars never flags a bar for a zero median', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 20 }),
+        fc.array(normalBar, { minLength: 1, maxLength: 20 }),
+        fc.integer({ min: 1, max: 10 }),
+        fc.double({ min: 0.01, max: 50, noNaN: true }),
+        (flatCount, normal, window, maxRangeMultiple) => {
+          const rows = [
+            ...Array.from({ length: flatCount }, (_, k) =>
+              hundredthsRow(k, 10_000, 10_000, 10_000, 10_000),
+            ),
+            ...normal.map((bar, i) =>
+              hundredthsRow(
+                flatCount + i,
+                bar.open,
+                bar.high,
+                bar.low,
+                bar.close,
+              ),
+            ),
+          ];
+          const batch = validateKlines(rows, {
+            ...closedOptions(rows.length, { window, maxRangeMultiple }),
+          });
+          const flagged = outlierTimes(batch);
+
+          // Ratio k is zero exactly for the flat bars 1..flatCount-1: a
+          // normal bar has high > low, so its true range is positive.
+          for (let k = window + 1; k < rows.length; k += 1) {
+            let zeros = 0;
+            for (let j = k - window; j < k; j += 1) {
+              if (j >= 1 && j < flatCount) zeros += 1;
+            }
+            const zeroMedian = zeros >= Math.floor(window / 2) + 1;
+
+            if (zeroMedian) {
+              expect(flagged, `slot ${k}`).not.toContain(slot(k));
+              expect(batch.unjudged, `slot ${k}`).toContain(slot(k));
+            } else {
+              expect(batch.unjudged, `slot ${k}`).not.toContain(slot(k));
+            }
+          }
+          for (let k = 0; k < flatCount; k += 1) {
+            expect(flagged).not.toContain(slot(k));
+          }
+          expect(batch.quarantined.map(({ reason }) => reason)).toEqual(
+            flagged.map(() => 'outlier'),
+          );
+        },
+      ),
+      RUNS,
+    );
+  });
+
+  it('after a lasting change in range, at most floor(window / 2) + 1 bars are flagged', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 10 }),
+        fc.integer({ min: 0, max: 5 }),
+        fc.integer({ min: 1, max: 4_999 }),
+        fc.integer({ min: 1, max: 4_999 }),
+        fc.double({ min: 1, max: 20, noNaN: true }),
+        (window, extraCalm, before, after, maxRangeMultiple) => {
+          const calmCount = window + 1 + extraCalm;
+          const changed = 2 * window + 3;
+          const bar = (k: number, half: number): unknown[] =>
+            hundredthsRow(k, 10_000, 10_000 + half, 10_000 - half, 10_000);
+          const rows = [
+            ...Array.from({ length: calmCount }, (_, k) => bar(k, before)),
+            ...Array.from({ length: changed }, (_, i) =>
+              bar(calmCount + i, after),
+            ),
+          ];
+          const batch = validateKlines(
+            rows,
+            closedOptions(rows.length, { window, maxRangeMultiple }),
+          );
+          const flagged = outlierTimes(batch);
+          const bound = Math.floor(window / 2) + 1;
+
+          expect(flagged.length).toBeLessThanOrEqual(bound);
+          for (const time of flagged) {
+            expect(time).toBeGreaterThanOrEqual(slot(calmCount));
+            expect(time).toBeLessThan(slot(calmCount + bound));
+          }
+        },
+      ),
+      RUNS,
+    );
+  });
+});
+
 describe('live and replay agree, D13 (criterion 21)', () => {
   it('one call over [from, to) equals [from, s) then [s, to) with history', () => {
     const arbitrary = fc.tuple(

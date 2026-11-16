@@ -201,13 +201,13 @@
     {
       "file": "local-trading-agent-backend/test/unit/market-data/validator.property.spec.ts",
       "milestone": "S1",
-      "covers": "fast-check, 500 runs each: every row lands in one bucket and nothing throws for mixed valid, mutated, duplicated and arbitrary rows; candles and missing partition the expected slots; output order and range; permutation invariance; no look-ahead in outlier verdicts and no unclosed bar in candles or checked; live and replay split with history agree (D13); freshness rules and monotonicity; deep-equal results under TZ UTC, Europe/Ljubljana and Pacific/Chatham",
+      "covers": "fast-check, 500 runs each: every row lands in one bucket and nothing throws for mixed valid, mutated, duplicated and arbitrary rows; candles and missing partition the expected slots; output order and range; permutation invariance; no look-ahead in outlier verdicts and no unclosed bar in candles or checked; round 2: a flat run followed by normal bars never flags a bar whose median is zero, and after a lasting change in range at most floor(window / 2) + 1 bars are flagged; live and replay split with history agree (D13); freshness rules and monotonicity; deep-equal results under TZ UTC, Europe/Ljubljana and Pacific/Chatham",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/unit/market-data/validator.spec.ts",
       "milestone": "S1",
-      "covers": "validateKlines over the fixture; duplicates (identical, ms against µs, 18th-digit conflict quarantines both and leaves the slot missing, a malformed row sharing a slot); order (reverse input, outOfOrder count); outside_range, future_bar precedence, open bars; missing (metrics gap 00:35 to 01:25 through missingRanges, empty batch, leading and trailing gaps, slots stop at asOfMs); outliers (spike, level shift, rising volatility, unjudged without history, none unjudged with history, the ratio, gap and median rules pinned at the boundary); every argument error throws naming the argument; row content never throws; freshness boundary cases",
+      "covers": "validateKlines over the fixture; duplicates (identical, ms against µs, 18th-digit conflict quarantines both and leaves the slot missing, a malformed row sharing a slot); order (reverse input, outOfOrder count); outside_range, future_bar precedence, open bars; missing (metrics gap 00:35 to 01:25 through missingRanges, empty batch, leading and trailing gaps, slots stop at asOfMs); outliers (spike, level shift, a rise in volatility flagging at most half a window plus one, unjudged without history, none unjudged with history, the ratio, gap and median rules pinned at the boundary); round 2: after a run of zero-range bars a zero median leaves bars unjudged, not flagged (the reviewers' probe of 10 flat then 10 normal bars, window 8, multiple 10, accepts slots 10 to 13), a spike right after a flat run is accepted and unjudged, a spike once the median is non-zero is flagged, and a zero-median bar still fails OHLC checks; every argument error throws naming the argument; row content never throws; freshness boundary cases",
       "status": "passing"
     },
     {
