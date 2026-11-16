@@ -128,7 +128,7 @@
       "id": "006-db-client-followups",
       "title": "S0f Database client follow-ups",
       "branch": "factory/006-db-client-followups",
-      "stage": "needs-human",
+      "stage": "merged",
       "round": 1,
       "maxRounds": 2,
       "rounds": [
@@ -142,10 +142,10 @@
         }
       ],
       "gate": "PASS",
-      "needsHuman": true,
-      "reason": "protected path (src/config/boot-output.ts) and five open decisions in the spec",
+      "needsHuman": false,
+      "reason": "",
       "builder": "aa461d70808d2178e",
-      "updatedAt": "2026-11-15T22:26:36Z"
+      "updatedAt": "2026-11-16T12:31:32Z"
     }
   ]
 }
