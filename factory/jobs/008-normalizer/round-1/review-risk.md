@@ -1,0 +1,21 @@
+VERDICT: PASS
+
+## Scope
+
+S1a adds pure market-data code: `shared/decimal.ts`, `market-data/normalizer.ts` and `market-data/validator.ts`, plus tests, fixtures and housekeeping. Nothing in the diff touches the risk engine, an order path, the entry gate, the 48-entry counter, the kill switch, stops, limits, the DecisionProvider or Claude. Those checklist items do not apply. I reviewed what does apply: money types, fail-safe defaults, UNKNOWN and staleness, no look-ahead, and whether anything here could hide data from the exit side.
+
+Checked and found sound:
+
+- **Money.** All eight price and volume fields go from string straight to `Decimal` (`normalizer.ts:175-183`). A JS `number` in a money field is `bad_number`, not converted. OHLC and volume checks use `Decimal` methods (`normalizer.ts:198-212`), and so do the outlier ratio and median (`validator.ts:150-165`). `number` appears only for epoch times, the trade count and the caller-supplied `maxRangeMultiple`, and none of those is money. No quantity is computed here, so rounding direction does not arise.
+- **D12 units.** The ms range and the µs range do not overlap (`normalizer.ts:36-39`). Seconds, nanoseconds, the band between the ranges, unsafe integers, padded strings and hex strings all fail. The µs-to-ms step is exact integer arithmetic. A µs open time with a sub-ms remainder fails alignment.
+- **Fail-safe direction.** `freshnessBlocksEntries` is true for everything but FRESH (`validator.ts:414-416`). Clock skew (`newestCloseMs >= asOfMs`) and no data are UNKNOWN. Every quarantined slot, including outliers and conflicting duplicates, is reported in `missing`. Argument errors throw `TypeError` or `RangeError`. Row content never throws, and nothing catches or swallows an exception. No threshold has a default.
+- **No look-ahead.** A bar counts as closed only when `closeTimeMs < asOfMs`, and open bars never reach `candles` or `checked`. Outlier verdicts use `ratios.slice(k - window, k)` and nothing after `k`. The placeholder ratio at index 0 is never inside a window. The expected-slot count (`validator.ts:308-314`) uses the same `t + step <= asOfMs` boundary as the closed check. Criteria 20 and 21 cover this as properties.
+- **Exits.** Nothing here blocks an exit. Outlier-quarantined bars keep their `candle` in the record, and the S10b hand-off to read them is recorded in `progress.md`.
+- **Tests.** No test is skipped, deleted or loosened. The only changed assertion is the S1a-to-S1b next line, as the spec allows. The freshness boundaries (`maxAgeMs`, `maxAgeMs + 1`, `clock_skew`, `no_data`) and "only FRESH lets entries through" each have pinned tests.
+
+## Findings
+
+None blocking. Two notes to carry forward:
+
+1. **A zero median flags every moving bar for a while** (`validator.ts:192-194`, non-blocking). Take a run of flat bars with `o = h = l = c = previous close`, such as zero-volume bars after a Binance maintenance window or on an illiquid pair. Their ratios are 0. Once at least half the window is zero, the median is 0, so `multiple × median = 0`, and any bar with any range is an `outlier`. That lasts until about half the window holds non-zero ratios again. With window 4, the first two real bars after four flat bars are both quarantined. This is fail-safe for entries, because those slots become `missing` and therefore UNKNOWN. But it is a small cascade, which the settlement says cannot happen, and it keeps real price moves out of `candles` exactly when trading resumes. **Fix (S1b, when it picks production values):** add a pinned test for the zero-median case. Then either treat a zero median as "cannot judge" (accept and list the bar in `unjudged`) or document the behaviour, and make the S10b hand-off explicitly cover it.
+2. **"Closed" rests only on the caller's clock** (`validator.ts:285-286`, non-blocking, hand-off). If the caller's `asOfMs` runs ahead of Binance server time, a bar that is still forming counts as closed, enters `candles`, and could feed a signal. The `clock_skew` check catches only `newestCloseMs >= asOfMs`, not a local clock running fast. **Fix (S1c/S1d):** derive `asOfMs` from exchange server time, or require the WebSocket `x` (closed) flag before handing a live bar to `validateKlines`. Record this next to the existing S1c/S1d hand-off.
