@@ -191,15 +191,179 @@ describe('markerReadFailure', () => {
     expect(markerReadFailure({ code: '42P01' })).toEqual({ kind: 'no_table' });
   });
 
-  it.each([
-    ['permission denied', { code: '42501' }],
-    ['an undefined column', { code: '42703' }],
-    ['a read timeout', new Error('Query read timeout')],
-    ['a dropped connection', new Error('Connection terminated unexpectedly')],
-    ['a non-error', 'boom'],
+  // S0f: a failed read now keeps a well-formed SQLSTATE, so the first two
+  // cases carry it. Each case still reads as a failed read.
+  it.each<[string, unknown, MarkerRead]>([
+    [
+      'permission denied',
+      { code: '42501' },
+      { kind: 'failed', sqlstate: '42501' },
+    ],
+    [
+      'an undefined column',
+      { code: '42703' },
+      { kind: 'failed', sqlstate: '42703' },
+    ],
+    ['a read timeout', new Error('Query read timeout'), { kind: 'failed' }],
+    [
+      'a dropped connection',
+      new Error('Connection terminated unexpectedly'),
+      { kind: 'failed' },
+    ],
+    ['a non-error', 'boom', { kind: 'failed' }],
+    ['null', null, { kind: 'failed' }],
+  ])('reads %s as a failed read', (_, error, read) => {
+    expect(markerReadFailure(error)).toStrictEqual(read);
+  });
+});
+
+describe('markerReadFailure keeps a well-formed SQLSTATE (S0f)', () => {
+  it.each(['XX000', '22012', '57P01', '42501'])(
+    'keeps %s as sqlstate',
+    (code) => {
+      expect(markerReadFailure({ code })).toStrictEqual({
+        kind: 'failed',
+        sqlstate: code,
+      });
+      expect(
+        markerReadFailure(Object.assign(new Error('boom'), { code })),
+      ).toStrictEqual({ kind: 'failed', sqlstate: code });
+    },
+  );
+
+  it.each<[string, unknown]>([
+    [
+      'a Node error code',
+      Object.assign(new Error('x'), { code: 'ECONNRESET' }),
+    ],
+    ["pg's read timeout, which has no code", new Error('Query read timeout')],
+    ['no code', {}],
+    ['a numeric code', { code: 22012 }],
+    ['lower case', { code: 'xx000' }],
+    ['four characters', { code: 'XX00' }],
+    ['six characters', { code: 'XX0000' }],
+    ['a quote inside', { code: 'XX00"' }],
+    ['a trailing newline', { code: 'XX000\n' }],
     ['null', null],
-  ])('reads %s as a failed read', (_, error) => {
-    expect(markerReadFailure(error)).toEqual({ kind: 'failed' });
+    ['a string thrown as the error', 'XX000'],
+    ['undefined', undefined],
+  ])('leaves sqlstate out for %s', (_, error) => {
+    const read = markerReadFailure(error);
+
+    expect(read).toStrictEqual({ kind: 'failed' });
+    expect(read).not.toHaveProperty('sqlstate');
+  });
+
+  it('still reads 42P01 as no_table, with no sqlstate', () => {
+    expect(markerReadFailure({ code: '42P01' })).toStrictEqual({
+      kind: 'no_table',
+    });
+  });
+
+  it('a code getter that throws is a failed read, not a crash', () => {
+    const hostile = {
+      get code(): string {
+        throw new Error('getter');
+      },
+    };
+
+    expect(markerReadFailure(hostile)).toStrictEqual({ kind: 'failed' });
+  });
+
+  it('has sqlstate exactly when code is a 5-character SQLSTATE other than 42P01', () => {
+    const code = fc.oneof(
+      fc.anything(),
+      fc.string({ minLength: 4, maxLength: 6 }),
+      fc.stringMatching(/^[0-9A-Z]{5}$/),
+      fc.stringMatching(/^[0-9A-Za-z"\n ]{5}$/),
+      fc.constantFrom('42P01', 'XX000', 'ECONNRESET', '42p01'),
+    );
+
+    fc.assert(
+      fc.property(code, (value) => {
+        const read = markerReadFailure({ code: value });
+        const wellFormed =
+          typeof value === 'string' &&
+          /^[0-9A-Z]{5}$/.test(value) &&
+          value !== '42P01';
+
+        expect('sqlstate' in read).toBe(wellFormed);
+        if (wellFormed) {
+          expect(read).toStrictEqual({ kind: 'failed', sqlstate: value });
+        }
+        if (value === '42P01') expect(read).toStrictEqual({ kind: 'no_table' });
+      }),
+      { numRuns: 2_000 },
+    );
+  });
+});
+
+describe('decideIdentity carries sqlstate on unreadable only (S0f)', () => {
+  it('copies sqlstate onto UNKNOWN unreadable', () => {
+    expect(
+      decideIdentity(MARKER, { kind: 'failed', sqlstate: 'XX000' }),
+    ).toStrictEqual({
+      status: 'UNKNOWN',
+      reason: 'unreadable',
+      sqlstate: 'XX000',
+    });
+  });
+
+  it('leaves it out when the failed read has none', () => {
+    const identity = decideIdentity(MARKER, { kind: 'failed' });
+
+    expect(identity).toStrictEqual({ status: 'UNKNOWN', reason: 'unreadable' });
+    expect(identity).not.toHaveProperty('sqlstate');
+  });
+
+  it('gives not_configured, with no sqlstate, when no marker is configured', () => {
+    for (const expected of [undefined, '', ' ']) {
+      const identity = decideIdentity(expected, {
+        kind: 'failed',
+        sqlstate: 'XX000',
+      });
+
+      expect(identity).toStrictEqual({
+        status: 'UNKNOWN',
+        reason: 'not_configured',
+      });
+    }
+  });
+
+  it('no result but unreadable ever carries sqlstate, over every MarkerRead shape', () => {
+    const value = fc.oneof(
+      fc.uuid(),
+      fc.string({ maxLength: 20 }),
+      fc.constant(MARKER),
+    );
+    const read: fc.Arbitrary<MarkerRead> = fc.oneof(
+      fc.constant<MarkerRead>({ kind: 'no_table' }),
+      fc.constant<MarkerRead>({ kind: 'failed' }),
+      fc
+        .stringMatching(/^[0-9A-Z]{5}$/)
+        .map((sqlstate): MarkerRead => ({ kind: 'failed', sqlstate })),
+      fc
+        .array(value, { maxLength: 3 })
+        .map((markers): MarkerRead => ({ kind: 'rows', markers })),
+    );
+
+    fc.assert(
+      fc.property(fc.option(value, { nil: undefined }), read, (expected, r) => {
+        const identity = decideIdentity(expected, r);
+        const carries = 'sqlstate' in identity;
+
+        if (identity.status === 'UNKNOWN' && identity.reason === 'unreadable') {
+          expect(carries).toBe(r.kind === 'failed' && r.sqlstate !== undefined);
+          if (carries && r.kind === 'failed') {
+            expect(identity.sqlstate).toBe(r.sqlstate);
+          }
+        } else {
+          expect(carries).toBe(false);
+        }
+        expect('sqlstate' in identityLogFields(identity)).toBe(carries);
+      }),
+      { numRuns: 2_000 },
+    );
   });
 });
 
@@ -219,6 +383,29 @@ describe('identityLogFields', () => {
       status: 'VERIFIED',
       marker: MARKER,
     });
+  });
+
+  it('adds sqlstate when the identity has one, and leaves it out otherwise (S0f)', () => {
+    expect(
+      identityLogFields({
+        status: 'UNKNOWN',
+        reason: 'unreadable',
+        sqlstate: 'XX000',
+      }),
+    ).toStrictEqual({
+      status: 'UNKNOWN',
+      reason: 'unreadable',
+      sqlstate: 'XX000',
+    });
+    expect(
+      identityLogFields({ status: 'UNKNOWN', reason: 'unreadable' }),
+    ).toStrictEqual({ status: 'UNKNOWN', reason: 'unreadable' });
+    expect(
+      identityLogFields({ status: 'VERIFIED', marker: MARKER }),
+    ).not.toHaveProperty('sqlstate');
+    expect(
+      identityLogFields({ status: 'UNKNOWN', reason: 'missing_marker' }),
+    ).not.toHaveProperty('sqlstate');
   });
 });
 

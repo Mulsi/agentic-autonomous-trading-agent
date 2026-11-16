@@ -104,6 +104,10 @@ describe('progress.md', () => {
     expect(progress).toMatch(/^- \[x\] S0e /m);
   });
 
+  it('marks S0f done', () => {
+    expect(progress).toMatch(/^- \[x\] S0f /m);
+  });
+
   it('says S0 is complete and names S1a as next', () => {
     expect(next).toMatch(/^- S1a /m);
     expect(next).toContain('S0 is complete');
@@ -177,6 +181,9 @@ describe('progress.md', () => {
       ['the _ms rule', '`_ms`'],
       ['timestamptz', '`timestamptz`'],
       ['the scrubbed failed-boot output', '`scrubSecrets`'],
+      ['the SQLSTATE on the unreadable line (S0f)', '`sqlstate`'],
+      ['the JSON ban (S0f)', '`jsonb`'],
+      ['the server-filled precision rule (S0f)', '`precision`'],
     ])('names %s', (_, needle) => {
       expect(current).toContain(needle);
     });
@@ -265,6 +272,19 @@ describe('tests.json', () => {
     const missing = listed.filter((file) => !existsSync(join(repoRoot, file)));
 
     expect(missing).toEqual([]);
+  });
+
+  it('describes dependencies.spec.ts with verifyDepsBeforeRun (S0f)', () => {
+    const entry = registry.tests.find(
+      ({ file }) =>
+        file ===
+        'local-trading-agent-backend/test/unit/tooling/dependencies.spec.ts',
+    );
+
+    expect(entry?.covers).toContain(
+      'holds only allowBuilds, overrides and verifyDepsBeforeRun',
+    );
+    expect(entry?.covers).not.toContain('holds only allowBuilds and overrides');
   });
 
   it('lists every spec file exactly once', () => {
