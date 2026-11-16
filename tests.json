@@ -81,7 +81,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/config/boot-output.inspect.spec.ts",
       "milestone": "S0",
-      "covers": "util.inspect gap in the failed-boot printers (S0f): a 300-run property over passwords with quotes, backslashes, controls and non-ASCII around a sentinel prints no sentinel from printBootFailure for the decoded, url.password and URL forms held in an own property, embedded text, depth 2 and 3, an array, a cause, an AggregateError entry and a Map value, with a no-secrets control; the reviewer's a'b\"c`d\\x07e probe and a newline-split long password leave no form, with controls; BootConsoleLogger error, log and params likewise (60 runs); exit code, class name, code, circular references, getters and unchanged inspect output with no secret",
+      "covers": "util.inspect gap in the failed-boot printers (S0f): a 300-run property over passwords with quotes, backslashes, controls and non-ASCII around a sentinel prints no sentinel from printBootFailure for the decoded, url.password and URL forms held in an own property, embedded text, depth 2 and 3, an array, a cause, an AggregateError entry and a Map value, with a no-secrets control; the reviewer's a'b\"c`d\\x07e probe and a newline-split long password leave no form, with controls; BootConsoleLogger error, log and params likewise (60 runs); exit code, class name, code, circular references, getters and unchanged inspect output with no secret; S0g: a user-defined own stack getter on an Error is called exactly once and copied as a scrubbed data property with the original accessor left in place, another own getter on it and a stack getter on a non-Error are not called, and the doc comment names the stack exception next to the getter rule",
       "status": "passing"
     },
     {
@@ -129,7 +129,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/db/compose.spec.ts",
       "milestone": "S0",
-      "covers": "docker-compose.yml: one postgres:16 service pinned to an image digest (the check rejects an undigested tag), on 127.0.0.1, named volume, pg_isready, UTC, no interpolation, credentials match .env.example and make db-up",
+      "covers": "docker-compose.yml: one postgres:16 service pinned to an image digest (the check rejects an undigested tag), on 127.0.0.1, named volume, pg_isready, UTC, no interpolation, credentials match .env.example and make db-up; S0g: make db-up reads the image reference once with config --images into a shell variable, stops with a db-up: message on stderr when the read fails, is empty or is not one word, has one if docker image inspect on that variable, passes --pull never only in its then branch (the else branch leaves the pull array empty, so a clean checkout pulls as before), keeps one up command with its flags and the array, never pulls explicitly, passes --env-file /dev/null on every compose command, and the comment above db-up names --pull never, the credential helper and why --pull missing is not enough",
       "status": "passing"
     },
     {
@@ -153,7 +153,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/db/identity.spec.ts",
       "milestone": "S0",
-      "covers": "identity decision for every reason (not_configured, missing_marker, mismatch including case, whitespace and prefixes, unreadable) and VERIFIED on an exact match, a property that VERIFIED means configured and equal to the single stored marker, every UNKNOWN blocks entries, exact status and reason unions, marker read failures classified, identity.ts stays pure; S0f: markerReadFailure keeps only a well-formed SQLSTATE (fast-check property, Node codes, missing, numeric, lower-case and malformed codes left out, 42P01 still no_table, a throwing getter is a failed read), decideIdentity copies sqlstate onto unreadable only (property over every MarkerRead shape), identityLogFields adds it",
+      "covers": "identity decision for every reason (not_configured, missing_marker, mismatch including case, whitespace and prefixes, unreadable) and VERIFIED on an exact match, a property that VERIFIED means configured and equal to the single stored marker, every UNKNOWN blocks entries, exact status and reason unions, marker read failures classified, identity.ts stays pure; S0f: markerReadFailure keeps only a well-formed SQLSTATE (fast-check property, Node codes, missing, numeric, lower-case and malformed codes left out, 42P01 still no_table, a throwing getter is a failed read), decideIdentity copies sqlstate onto unreadable only (property over every MarkerRead shape), identityLogFields adds it; S0g: the VERIFIED property also draws failed reads with a sqlstate and asserts it drew some",
       "status": "passing"
     },
     {
@@ -207,7 +207,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/tooling/repo-files.spec.ts",
       "milestone": "S0",
-      "covers": ".env.example has the three schema keys with a blank DATABASE_IDENTITY and unchanged URL and mode lines, ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0a to S0e done, S0 complete, S1a next, the S0e current state and setup steps, hand-offs to S7a, S7b, S11a and S12, three keys, @isaacs/nonrecursive-glob-match in the Dependencies settlement) and tests.json at the repo root; the identity setup is limited to a database's first run, and a mismatch marker is never copied into .env (round 2); S0f: the dependencies.spec.ts entry text names verifyDepsBeforeRun, and Current state names sqlstate, jsonb and precision",
+      "covers": ".env.example has the three schema keys with a blank DATABASE_IDENTITY and unchanged URL and mode lines, ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0a to S0e done, S0 complete, S1a next, the S0e current state and setup steps, hand-offs to S7a, S7b, S11a and S12, three keys, @isaacs/nonrecursive-glob-match in the Dependencies settlement) and tests.json at the repo root; the identity setup is limited to a database's first run, and a mismatch marker is never copied into .env (round 2); S0f: the dependencies.spec.ts entry text names verifyDepsBeforeRun, and Current state names sqlstate, jsonb and precision; S0g: S0g done, S0a to S0g merged in Next, and the Database section names config --images and the run-time --pull never choice, not --pull missing",
       "status": "passing"
     },
     {

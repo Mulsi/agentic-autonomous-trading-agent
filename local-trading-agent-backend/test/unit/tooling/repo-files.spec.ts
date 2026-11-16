@@ -108,6 +108,22 @@ describe('progress.md', () => {
     expect(progress).toMatch(/^- \[x\] S0f /m);
   });
 
+  it('marks S0g done', () => {
+    expect(progress).toMatch(/^- \[x\] S0g /m);
+  });
+
+  it('says S0a to S0g have merged', () => {
+    expect(next).toContain('S0a to S0g');
+  });
+
+  it('says make db-up passes --pull never only for an image already local (S0g)', () => {
+    const database = subsection(section(progress, 'Current state'), 'Database');
+
+    expect(database).toContain('--pull never');
+    expect(database).toContain('config --images');
+    expect(database).not.toContain('--pull missing');
+  });
+
   it('says S0 is complete and names S1a as next', () => {
     expect(next).toMatch(/^- S1a /m);
     expect(next).toContain('S0 is complete');

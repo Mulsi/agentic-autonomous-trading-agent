@@ -20,6 +20,11 @@ test lint typecheck:
 # migrations. Safe to run again. Any failure stops the target non-zero (D11).
 # Nothing reads .env: --env-file /dev/null keeps compose from loading one, the
 # migration URL is set here, and db:migrate stops drizzle-kit from loading one.
+# An image Docker already has under the exact reference in docker-compose.yml
+# is never pulled: up gets --pull never, because a pull can hang in Docker's
+# credential helper (S0f). --pull missing is not enough: compose still pulls a
+# digest-pinned image whose local tag differs. Without the image, compose
+# pulls as before, so a clean checkout still works.
 db-up:
 	@set -eo pipefail; \
 	export PATH="$$PATH:$(DOCKER_BIN)"; \
@@ -29,7 +34,18 @@ db-up:
 	if ! docker info --format '{{.ServerVersion}}' >/dev/null; then \
 	  echo "db-up: cannot reach the Docker daemon. Start Docker Desktop." >&2; exit 1; \
 	fi; \
-	docker compose --env-file /dev/null --file docker-compose.yml up --detach --wait --wait-timeout 120; \
+	image="$$(docker compose --env-file /dev/null --file docker-compose.yml config --images)" || { \
+	  echo "db-up: cannot read the image reference from docker-compose.yml." >&2; exit 1; \
+	}; \
+	if [ -z "$$image" ] || [[ "$$image" =~ [[:space:]] ]]; then \
+	  echo "db-up: docker-compose.yml must name exactly one image reference." >&2; exit 1; \
+	fi; \
+	if docker image inspect "$$image" >/dev/null 2>&1; then \
+	  pull=(--pull never); \
+	else \
+	  pull=(); \
+	fi; \
+	docker compose --env-file /dev/null --file docker-compose.yml up --detach --wait --wait-timeout 120 "$${pull[@]}"; \
 	. ./factory/env.sh; \
 	cd $(APP); \
 	pnpm install --frozen-lockfile; \
