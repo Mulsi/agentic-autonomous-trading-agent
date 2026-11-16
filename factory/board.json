@@ -174,9 +174,9 @@
       "id": "008-normalizer",
       "title": "S1a Normalizer and validator",
       "branch": "factory/008-normalizer",
-      "stage": "needs-human",
-      "round": 1,
-      "maxRounds": 2,
+      "stage": "build",
+      "round": 2,
+      "maxRounds": 3,
       "rounds": [
         {
           "reviews": {
@@ -185,13 +185,22 @@
             "quant": "PASS",
             "code": "PASS"
           }
+        },
+        {
+          "reviews": {
+            "security": "pending",
+            "risk": "pending",
+            "quant": "pending",
+            "code": "pending"
+          },
+          "note": true
         }
       ],
-      "gate": "PASS",
+      "gate": "pending",
       "needsHuman": false,
-      "reason": "[human] criterion 31, five open decisions, and the zero-median outlier cascade that contradicts the spec",
+      "reason": "",
       "builder": "a540adbb706ed3eb2",
-      "updatedAt": "2026-11-16T15:22:17Z"
+      "updatedAt": "2026-11-16T17:12:19Z"
     }
   ]
 }
