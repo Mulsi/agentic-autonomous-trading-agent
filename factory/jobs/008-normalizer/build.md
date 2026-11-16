@@ -113,3 +113,148 @@ I added these after hand-mutating the source: `.div(bar.close)`, dropping `Decim
 - **`missingRanges` caps a trailing range at `toMs`** when `toMs` is not on the grid, so a range never extends past the requested end. `validateKlines` always passes an aligned end.
 - **`history` validation** checks symbol, interval, strict ascent and `last.closeTimeMs < range.fromMs`. It does not re-validate history candles' prices.
 - I ran `prettier --write` on the new and changed spec/source files only.
+
+## Round 2
+
+Commit `78d582a` on `factory/008-normalizer`, on top of `3ca6158`. I worked from `round-2/human-note.md`, the four round-1 reviews and `decision.md`. Nothing outside the three items changed: no new package, no Docker, no download.
+
+### 1. Zero-median outlier cascade (fixed)
+
+- **Code** (`src/market-data/validator.ts`, `outlierVerdicts`):
+  - After the warm-up check, the bar is not judged when the median of the previous `window` ratios is zero (`reference.isZero()`). It is accepted and listed in `unjudged`, like a warm-up bar.
+  - It still goes through every other check: row checks, future and range, duplicates, closed or open.
+  - The internal verdict type names both cases, `unjudged_warm_up` and `unjudged_zero_median`, with a comment explaining them.
+  - `KlineBatch.unjudged` already listed bars without saying why. Its doc comment now names both causes. I added no reason field to the result, because the note said not to change anything else.
+  - The rule stays causal (only ratios `[k - window, k)`), stays in `Decimal`, and adds no threshold or default.
+- **Spike right after a flat run: accepted and listed as `unjudged`.**
+  - With a zero median the rule has no scale to judge against. The only ways to flag such a bar are a floor on the reference, which would be an invented production number (master Part II §13), or flagging any movement, which is the cascade this round removes.
+  - The bar has passed every other check. A consumer that wants extra caution can see it in `unjudged`. A research-backed floor can come with S1b's production values.
+  - Once the median is non-zero again the rule judges normally: a spike at that point is still flagged.
+- **Tests** (`validator.spec.ts` › "the outlier rule after a run of zero-range bars (round 2)"):
+  - The reviewers' probe: 10 flat bars, then 10 normal ones, window 8, multiple 10.
+    - All 20 slots are accepted.
+    - Nothing is quarantined or missing.
+    - `unjudged` is slots 0 to 13: 0 to 8 are warm-up and 9 to 13 have a zero median. Slots 10 to 13, which were flagged before, are now accepted.
+    - From slot 14 the median is non-zero and the bars are judged and accepted.
+  - A spike right after the flat run is accepted and unjudged.
+  - A spike at slot 16, once the median is non-zero, is still `outlier`.
+  - A zero-median bar with `high < open` is still `ohlc_inconsistent`, and its slot is missing.
+- **Properties** (`validator.property.spec.ts` › "outliers after a flat run and after a range change (round 2)", 500 runs each):
+  - Flat run, then normal bars:
+    - The test computes for itself which bars have a zero median, by counting flat ratios in each window.
+    - Every bar whose window has a zero median is unjudged and never flagged. Every judged bar is not in `unjudged`. No flat bar is flagged.
+    - Inputs: any window from 1 to 10, any multiple from 0.01 to 50, flat runs of 1 to 20 bars, and normal bars of random range, open and close.
+  - The bound used in item 2: see below.
+- **Existing pinned outlier cases are unchanged and pass**: spike, level shift, rise in volatility, warm-up, history, and the boundary cases. Their ratios are never zero.
+- **Mutation check:** removing the `isZero` branch fails five of the new tests (four pinned and the flat-run property).
+
+### 2. Wording (corrected)
+
+The rule does not promise "never cascades". What it guarantees now:
+
+- Flagged bars stay in the reference series, so one spike or level shift does not change the scale that later bars are judged against. The pinned level-shift test still shows at most the shift bar and the next bar flagged.
+- After a lasting rise in bar range, with `maxRangeMultiple ≥ 1`, at most `floor(window / 2) + 1` bars of the new range are flagged, all at the start of the new range. After that the median holds the new range. With a window of about 96 on 15m this is still about 12 hours, and it fails safe: the slots are missing, entries are blocked, and the candles stay in `quarantined[].candle`.
+  - The new property "after a lasting change in range, at most floor(window / 2) + 1 bars are flagged" proves it over windows 1 to 10, multiples 1 to 20, and any pair of ranges.
+- After a run of zero-range bars, no bar is flagged for the zero median.
+
+Where the wording changed:
+
+- the `outlierVerdicts` doc comment in `validator.ts`
+- `progress.md`: the Current state outlier bullet, a new "What the outlier rule guarantees" bullet, and the "Choices" settlement bullet
+- `tests.json`: the `covers` text for the two validator specs. Neither said "never cascades"; both now describe the round-2 tests.
+- the title of one test: "a sustained rise in volatility does not cascade" became "… flags only the first bars, up to half a window plus one". Its assertions are unchanged (`≤ 2` flagged for window 4, which is tighter than the general bound of 3, and every later bar accepted).
+
+`spec.md` itself still says "never cascades". It is in `factory/`, which I may not edit.
+
+### 3. Hand-offs recorded in `progress.md` (Settlements › Market data › Hand-offs)
+
+- **S1b:**
+  - Quarantine storage keeps the raw row as data: parameterized inserts, never formatted into a log line, never given to Claude as instructions.
+  - Production outlier window and multiple.
+  - Whether a bar measured across a gap of missing slots is judged at all (quant 2).
+  - Off-grid metrics rows are quarantined instead of silently dropped by `missingRanges` (quant 3).
+  - Kept from round 1: the row schemas and CSV header handling.
+- **S1c and S1d:**
+  - Cap payload and field length where data comes in (security 1).
+  - Pass only the previous batch's `checked` as `history` (security 3).
+  - A bar counts as closed only by the exchange's signal (the WebSocket `x` flag, or exchange server time with a short delay), not by the local clock alone. A provisional and a final copy of one bar never land in the same batch (risk 2, quant 4).
+- **S10b:** emergency exits read outlier-flagged candles from the quarantine record, so a real crash bar is never hidden.
+- **S3 and S7a:** unchanged.
+
+### Results
+
+```
+$ pnpm test
+ Test Files  33 passed (33)
+      Tests  1023 passed (1023)
+
+$ pnpm lint
+$ eslint src test
+(no output, exit 0)
+
+$ pnpm build
+$ pnpm typecheck && nest build
+$ tsc --noEmit -p tsconfig.json
+(no errors, exit 0)
+```
+
+No test was deleted, skipped or loosened. The only change to an existing test is the title above. Nothing under `src/db/`, `src/config/`, `factory/`, `.claude/`, `CLAUDE.md`, the plans or `docker-compose.yml` changed, and `package.json` and the lockfile are untouched this round.
+
+### For the reviewer
+
+- **The spike-after-flat-run choice** is the one judgement call this round, explained above. The other option is a floor on the reference. That needs a production number, which belongs with S1b's research-backed values.
+- **The result does not say why a bar is unjudged**: it has a list, not reasons. If S2 or S3 needs to tell warm-up from zero-median bars, adding a field is a small later change.
+
+## Round 3
+
+Commit `1939223` on `factory/008-normalizer`, on top of `78d582a`. I worked from the round-2 reviews: quant asked for changes, and code, risk and security passed. Only comments changed in the code; `validator.ts` logic is the same. No new package, no Docker, no download.
+
+### 1. Blocking: the flat-run overclaim (fixed)
+
+- The `progress.md` Settlements › Market data › "Choices" bullet no longer says "so a flat run never flags the bars after it". It now says:
+  - no bar is flagged because the median is zero
+  - zero ratios stay in the window after the median turns non-zero and pull it low, so for up to `window` bars after a flat run a bar is judged against a lower threshold (for an even window, as low as half the smallest real ratio in the window) and can still be flagged
+  - that fails safe: the slot goes missing and entries are blocked
+- The `outlierVerdicts` doc comment in `validator.ts` now says the same.
+- I checked the other places that could make this claim:
+  - `progress.md` Current state: "A bar with a zero median is never flagged" is accurate.
+  - `tests.json`: "never flags a bar whose median is zero" and "a zero median leaves bars unjudged, not flagged" are both accurate.
+  - Test titles: "a flat run followed by normal bars never flags a bar for a zero median" and "10 flat bars then 10 normal ones …: nothing is flagged" are accurate. The second describes that exact series.
+  - None of these overclaim, so I left them as they are.
+
+### 2. The quant probe, pinned
+
+New block in `validator.spec.ts`: "zero ratios left in the window bias the median low (round 3)". It uses window 8, multiple 10 and price 100.
+
+- The test computes the expected values itself, in integer units of 1e-4: flat = 0, tight (range 0.1) = 10, normal (range 1) = 100. It sorts each 8-ratio window, takes the mean of the two middle values, and multiplies by 10. Nothing comes from the code under test.
+- **10 flat, 4 tight, 6 normal:** at slot 14 the computed median is 5 (0.0005) and the threshold 50 (0.005). 100 (0.01) is above it, and `validateKlines` quarantines exactly slot 14 as `outlier`. `missing` is `[slot 14, slot 15)`.
+- **Control, with tight bars in place of the flat run:** the computed median is 10 (0.001) and the threshold 100 (0.01). 0.01 is not above 0.01, so nothing is quarantined and nothing is missing.
+
+### 3. Round-2 hand-offs added to `progress.md`
+
+- **S3 and S7a:** bars in `unjudged` (warm-up and zero-median bars) have not passed the outlier check.
+  - Those jobs decide whether such bars count as verified input for an entry signal.
+  - Fail-safe default: they do not, because UNKNOWN blocks entries.
+  - Add a reason (warm-up or zero median) to the result if a later job needs to tell them apart.
+  - Sources: security round-2 note 1, risk round-2 note 1.
+- **S1c and S1d:** `freshness` looks only at the close time, so a feed stuck on flat bars still reads FRESH. Treat a long flat run on a liquid pair as a data-health signal. Source: risk round-2 note 3.
+- **S1b:** the production `maxRangeMultiple` must be at least 1, because the `floor(window / 2) + 1` bound holds only then. Source: code round-2 note 1.
+
+### Results
+
+```
+$ pnpm test
+ Test Files  33 passed (33)
+      Tests  1025 passed (1025)
+
+$ pnpm lint
+$ eslint src test
+(no output, exit 0)
+
+$ pnpm build
+$ pnpm typecheck && nest build
+$ tsc --noEmit -p tsconfig.json
+(no errors, exit 0)
+```
+
+No test was deleted, skipped or loosened this round, and I renamed none. Two tests were added. Nothing under `src/db/`, `src/config/`, `factory/`, `.claude/`, `CLAUDE.md`, the plans or `docker-compose.yml` changed. `package.json` and the lockfile are untouched.
