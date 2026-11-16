@@ -52,6 +52,23 @@ The app is a standalone Nest application context in `local-trading-agent-backend
   - JSON: `json` and `jsonb` are banned until a job needs one and defines how money inside stays a string, because `JSON.parse` turns any number inside into a JS `number`.
   - D12, µs against ms: a `timestamptz` the server fills (`.defaultNow()` or any `.default(...)`) must declare `precision` 0 to 3. `now()` stores microseconds and both JS read paths keep milliseconds, so `=` on a value read back misses the row. A `$defaultFn` is filled in JS and is exempt. One pinned exemption: `database_identity.created_at`, which nothing reads or compares; a stale exemption fails the scan.
 
+### Market data
+
+S1a added the first market-data code: pure TypeScript with no Nest, database, network, clock, environment or logging, so live trading and the S6 replay call the same functions (D13). Nothing is stored yet, and no Nest module wires it.
+
+- `src/shared/decimal.ts` exports the money type, a `Decimal.clone()` of `decimal.js` with its default settings, so no module changes the global configuration. `parseNonNegativeDecimal` reads only a plain non-negative decimal string (no sign, exponent, whitespace or extra leading zero) and returns `undefined` for anything else, a JS `number` included.
+- `normalizer.ts` in `src/market-data/` turns one Binance kline row (the 12-element array that REST JSON and a split bulk CSV line share) into a `Candle`: times in UTC epoch ms, the eight price and volume fields as `Decimal`, the trade count as a number. Interval types and lengths cover `15m`, `1h`, `4h` and `1d` (§2).
+  - D12: `normalizeEpoch` reads each timestamp as ms when it lies in [2017-01-01, 2100-01-01) in ms, and as µs when it lies in the same span in µs; anything else, nanoseconds included, is invalid. Open and close must be in the same unit, the open time aligned to the interval in that unit, and the close time exactly `open + interval - 1`.
+  - Row reasons, first failure wins: `malformed_row`, `bad_timestamp`, `timestamp_unit_mismatch`, `misaligned_open_time`, `bad_close_time`, `bad_number`, `non_positive_price`, `ohlc_inconsistent`, `volume_inconsistent`.
+- `validator.ts` in `src/market-data/`:
+  - `validateKlines(rows, options)` checks a batch against the caller's `asOfMs` and a half-open `range`. Every input row lands in exactly one of `candles` (accepted, closed), `open` (valid but not closed at `asOfMs`), `quarantined`, or the `duplicatesCollapsed` count.
+  - Batch reasons: `future_bar`, `outside_range`, `duplicate_conflict` (copies of one slot that differ: every copy is quarantined) and `outlier`. Identical copies collapse to one. Out-of-order rows are sorted and counted in `outOfOrder`, not quarantined.
+  - Outliers: a causal true-range ratio against the median of the previous `window` ratios, in `Decimal`. `outlier.window` and `outlier.maxRangeMultiple` are required arguments with no default. Bars the rule cannot judge yet are accepted and listed in `unjudged`; `history` (a previous batch's `checked` tail) lets the rule judge from the first bar. A quarantine record keeps the raw row, and the candle when it parsed.
+  - `missing` lists every expected slot (aligned, in range, closed by `asOfMs`) with no accepted candle, as maximal half-open ranges. A quarantined slot is missing. Nothing is filled or interpolated. `missingRanges` is the generic gap function, for any regular series such as the 5-minute metrics.
+  - `freshness` (`newestCloseMs`, `asOfMs`, `maxAgeMs`) gives `FRESH`, `STALE`, or `UNKNOWN` (`no_data`, `clock_skew`); `freshnessBlocksEntries` is true for everything but `FRESH`. `maxAgeMs` has no default.
+  - Argument errors (an unknown interval, an unaligned or reversed range, a non-integer `asOfMs`, bad outlier options or `maxAgeMs`, inconsistent `history`) throw a `TypeError` or `RangeError` naming the argument. Row content never throws.
+- Fixtures under `test/fixtures/market-data/` are hand-written in the documented formats: a bulk CSV excerpt with µs times, the same bars as REST JSON in ms, and a 5-minute metrics time list with a gap. Nothing is fetched.
+
 ### Research
 
 `research/` at the repo root is the Python skeleton (D13): `pyproject.toml` for uv with Python 3.12 and no dependencies, `.python-version`, `uv.lock`, `notebooks/` and `reports/`. It is offline only and stays out of every TypeScript script, config and `make` target. `research/README.md` states the boundary, and says research connects only as `research_reader`, never as `trader`.
@@ -65,10 +82,11 @@ The app is a standalone Nest application context in `local-trading-agent-backend
 - [x] S0e Database client: the first connection through `src/db/client.ts`, the database identity marker and its boot check, the `research_reader` role, the column conventions, scrubbed failed-boot output, the D9 dependency test
 - [x] S0f Database client follow-ups: `sqlstate` on the `unreadable` identity line, a zod check on the marker rows, the value scrub before `util.inspect` on both failed-boot printers, the schema scan as an allow-list with the integer, array, `jsonb` and server-filled `precision` rules, and the raw-pool `int8` and D12 evidence
 - [x] S0g Small fixes: `make db-up` starts with `--pull never` when the pinned image is already local, the identity property also draws failed reads that carry a `sqlstate`, and the `scrubbedForInspect` comment names its one called getter, an Error's own `stack`
+- [x] S1a Normalizer and validator: D12 ms and µs timestamps, `Decimal` money through `decimal.js`, row checks, duplicates, ordering, range and future bars, closed against open bars, causal outliers, explicit missing ranges, freshness, and quarantine as a pure result type
 
 ## Next
 
-- S1a Normalizer and validator: ms and µs timestamps (D12), duplicates, ordering, gaps, staleness, OHLC sanity, outliers, quarantine.
+- S1b Bulk history loader with CHECKSUM verification, the first job that stores market data.
 
 S0 is complete: S0a to S0g have merged, and every S0 "Done when" command works from a clean checkout.
 
@@ -96,6 +114,16 @@ typescript-eslint with type-aware rules replaces oxlint, following D2. `no-expli
 - `docker-compose.yml` has no fixed `name:`. A fixed name would share one volume across every checkout, so a scratch clone's `down -v` would delete the real paper-run data. The identity marker is the defence instead.
 - Python packaging stays inside `research/`, so there is no root `pyproject.toml` and no `research/datasets/`. Research reads from Postgres.
 
+### Market data
+
+- **Quarantine is a result type, not a table (S1a).** Validation is calculation code that the replay calls without a database (§4, D13), and §7 lists no quarantine table. `validateKlines` returns every quarantined row with its reason, its raw input and, when it parsed, its candle, so the caller can log, store or report it without validating again.
+- **Choices from the plan's intent.** Out-of-order rows are sorted and counted, not quarantined: a bar's own open time fixes its slot. Conflicting duplicates quarantine every copy and the slot becomes missing. Outlier-flagged bars stay in the reference series, so a level shift flags at most the bars around it. A row that fails a row check carries no candle in its record.
+- **Hand-offs.**
+  - **S1b:** whether and where quarantined rows are stored, and the migration for it (human); production values for `outlier.window` and `outlier.maxRangeMultiple`, from config and marked provisional; row schemas for premium-index klines (signed values), funding and metrics (`create_time` datetime strings); CSV header handling.
+  - **S1c and S1d:** map the REST and WebSocket `k` payloads into the row shape or a `Candle`, and pass `history` from the previous batch's `checked`.
+  - **S3 and S7a:** take `maxAgeMs` from config, and treat `freshnessBlocksEntries` and `missing` slots as UNKNOWN.
+  - **S10b:** the emergency rules read outlier-quarantined candles from `quarantined[].candle`, so a real crash bar flagged as an outlier still reaches the exit side.
+
 ### Dependencies
 
 S0d settled the dependency tree. `pnpm audit --prod` reports no advisory.
@@ -105,6 +133,7 @@ S0d settled the dependency tree. `pnpm audit --prod` reports no advisory.
   - `@nestjs/mau`, the `deploy` script (`nest deploy`) and the app README's Deployment text. Slice 1 is local only (§2 Ops). They caused 23 of the 26 advisories on `main` (21 `undici`, 2 `tmp`).
 - **Added.** `fast-check`, as a devDependency (D2). It is the only direct addition.
 - **New transitive package.** `@isaacs/nonrecursive-glob-match` is a transitive dev package that came in through `@nestjs/cli` 12.0.12 and its `minimatch` 11. minimatch's author publishes it, and it has no install script that pnpm runs.
+- **`decimal.js` (S1a).** `decimal.js` 10.6.0 is a runtime dependency, pinned exactly and added with `pnpm add`, as D2 names it for money. It has no dependencies and no install script, so `pnpm-workspace.yaml` is unchanged. `pnpm audit --prod` still reports no advisory.
 - **D9 is a unit test.** `test/unit/tooling/dependencies.spec.ts` fails if the Anthropic SDK or an exchange client package appears in any dependency section of `package.json` or among the `pnpm-lock.yaml` packages.
 - **Lockfile.** `pnpm-lock.yaml` is a fresh resolution of `package.json` and `pnpm-workspace.yaml`, not an edit of the old one. Nest moved from 12.2 to 12.4. pnpm 12 skips versions published in the last day, and S0d left that setting alone.
 - **TypeScript pin.** `typescript` is `~6.0.3`, not `^6.0.2`. typescript-eslint 8.72 declares the peer range `typescript >=4.8.4 <6.1.0`, and a caret range would let a refresh move TypeScript to 6.1 outside it. Raise the pin only to a version that the locked typescript-eslint declares.
