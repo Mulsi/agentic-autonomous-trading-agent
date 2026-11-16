@@ -146,6 +146,29 @@
       "reason": "",
       "builder": "aa461d70808d2178e",
       "updatedAt": "2026-11-16T12:31:32Z"
+    },
+    {
+      "id": "007-small-fixes",
+      "title": "S0g Small fixes",
+      "branch": "factory/007-small-fixes",
+      "stage": "needs-human",
+      "round": 1,
+      "maxRounds": 2,
+      "rounds": [
+        {
+          "reviews": {
+            "security": "PASS",
+            "risk": "PASS",
+            "quant": "PASS",
+            "code": "PASS"
+          }
+        }
+      ],
+      "gate": "PASS",
+      "needsHuman": true,
+      "reason": "protected path (src/config/boot-output.ts, comments only)",
+      "builder": "a1766fe5d743ae1e4",
+      "updatedAt": "2026-11-16T12:57:34Z"
     }
   ]
 }
