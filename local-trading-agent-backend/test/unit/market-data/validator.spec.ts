@@ -572,6 +572,72 @@ describe('the outlier rule after a run of zero-range bars (round 2)', () => {
     ]);
     expect(batch.missing).toEqual([{ fromMs: slot(10), toMs: slot(11) }]);
   });
+
+  describe('zero ratios left in the window bias the median low (round 3)', () => {
+    // The round-2 quant probe, window 8, multiple 10, price 100. Ratios are
+    // written in units of 1e-4 so the expected values are exact integers:
+    // flat = 0, tight (range 0.1) = 10, normal (range 1) = 100.
+    const tight = (i: number): unknown[] =>
+      msRow(slot(i), STEP, {
+        open: '100',
+        high: '100.05',
+        low: '99.95',
+        close: '100',
+      });
+    const kinds = (first: 'flat' | 'tight'): ('flat' | 'tight' | 'calm')[] => [
+      ...Array.from({ length: 10 }, () => first),
+      ...Array.from({ length: 4 }, () => 'tight' as const),
+      ...Array.from({ length: 6 }, () => 'calm' as const),
+    ];
+    const RATIO = { flat: 0, tight: 10, calm: 100 } as const;
+    const rowsOf = (series: readonly ('flat' | 'tight' | 'calm')[]) =>
+      series.map((kind, i) =>
+        kind === 'flat' ? flat(i) : kind === 'tight' ? tight(i) : calm(i),
+      );
+
+    /** The spec's rule over integer ratios: [median, threshold] at slot k. */
+    function reference(
+      series: readonly ('flat' | 'tight' | 'calm')[],
+      k: number,
+    ): [number, number] {
+      const window = series
+        .slice(k - 8, k)
+        .map((kind) => RATIO[kind])
+        .sort((a, b) => a - b);
+      const median = ((window[3] as number) + (window[4] as number)) / 2;
+      return [median, 10 * median];
+    }
+
+    it('after 10 flat bars and 4 tight ones, the first normal bar (slot 14) is flagged', () => {
+      const series = kinds('flat');
+      const [median, threshold] = reference(series, 14);
+
+      // Median 0.0005, threshold 0.005; the normal ratio 0.01 is above it.
+      expect([median, threshold]).toEqual([5, 50]);
+      expect(RATIO.calm).toBeGreaterThan(threshold);
+
+      const batch = run(rowsOf(series), 8, 10);
+
+      expect(
+        batch.quarantined.map(({ reason, openTimeMs }) => [reason, openTimeMs]),
+      ).toEqual([['outlier', slot(14)]]);
+      expect(batch.missing).toEqual([{ fromMs: slot(14), toMs: slot(15) }]);
+    });
+
+    it('the control, tight bars in place of the flat run, flags nothing', () => {
+      const series = kinds('tight');
+      const [median, threshold] = reference(series, 14);
+
+      // Median 0.001, threshold 0.01; 0.01 is not above it.
+      expect([median, threshold]).toEqual([10, 100]);
+      expect(RATIO.calm).not.toBeGreaterThan(threshold);
+
+      const batch = run(rowsOf(series), 8, 10);
+
+      expect(batch.quarantined).toEqual([]);
+      expect(batch.missing).toEqual([]);
+    });
+  });
 });
 
 describe('the outlier rule, pinned at its boundary', () => {

@@ -188,8 +188,12 @@ type Verdict =
  * - After a lasting rise in bar range, at most `floor(window / 2) + 1` bars of
  *   the new range are flagged (with `maxRangeMultiple >= 1`); by then the
  *   median holds the new range.
- * - After a run of zero-range bars, no bar is flagged for the zero median:
- *   bars stay unjudged until the median is non-zero again.
+ * - After a run of zero-range bars, no bar is flagged because the median is
+ *   zero: such bars stay unjudged until the median is non-zero again. This
+ *   does not mean nothing after a flat run is flagged. Zero ratios left in
+ *   the window bias the median low for up to `window` bars after the run, so
+ *   a bar in that span can be flagged against a lower threshold; that fails
+ *   safe (the slot goes missing).
  */
 function outlierVerdicts(
   series: readonly Candle[],
