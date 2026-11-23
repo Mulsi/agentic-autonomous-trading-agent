@@ -124,10 +124,51 @@ describe('progress.md', () => {
     expect(database).not.toContain('--pull missing');
   });
 
-  it('says S0 is complete and names S1a as next', () => {
-    expect(next).toMatch(/^- S1a /m);
+  it('says S0 is complete and names S1b as next', () => {
+    expect(next).toMatch(/^- S1b /m);
     expect(next).toContain('S0 is complete');
     expect(next).not.toMatch(/^- S0/m);
+  });
+
+  describe('S1a', () => {
+    it('marks S1a done', () => {
+      expect(progress).toMatch(/^- \[x\] S1a /m);
+    });
+
+    it('describes the market data in Current state', () => {
+      const marketData = subsection(
+        section(progress, 'Current state'),
+        'Market data',
+      );
+
+      for (const needle of [
+        '`normalizer.ts`',
+        '`validator.ts`',
+        'D12',
+        '`freshness`',
+      ]) {
+        expect(marketData).toContain(needle);
+      }
+    });
+
+    it('records the market data settlement and its hand-offs to S1b and S10b', () => {
+      const settlement = subsection(
+        section(progress, 'Settlements'),
+        'Market data',
+      );
+
+      expect(settlement).toContain('S1b');
+      expect(settlement).toContain('S10b');
+    });
+
+    it('names decimal.js in the Dependencies settlement', () => {
+      const settlement = subsection(
+        section(progress, 'Settlements'),
+        'Dependencies',
+      );
+
+      expect(settlement).toContain('`decimal.js`');
+    });
   });
 
   it('mentions the digest pin in its Database section', () => {

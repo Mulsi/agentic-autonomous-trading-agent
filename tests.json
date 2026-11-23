@@ -187,9 +187,39 @@
       "status": "passing"
     },
     {
+      "file": "local-trading-agent-backend/test/unit/market-data/normalizer.spec.ts",
+      "milestone": "S1",
+      "covers": "D12 normalizeEpoch: ms and µs numbers and strings, the ms and µs range properties with no value read as both units, and every rejected case (range ends, the band between, nanoseconds, fractions, negatives, padded or hex strings, unsafe integers, null, bigint); the fixture bar in bulk CSV µs and REST JSON ms gives equal candles; each row reason from malformed_row to volume_inconsistent with first-in-order wins; OHLC and volume properties for every interval and both units, single mutations, zero-volume flat bars; Decimal money fields, an 18th-digit low that a float compare would accept, and the alignment and close-time rules per interval and unit",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/market-data/purity.spec.ts",
+      "milestone": "S1",
+      "covers": "text scan: normalizer.ts, validator.ts and shared/decimal.ts import only decimal.js, zod and src/shared or src/market-data modules (no Nest, Drizzle, pg, pino, src/db, src/config, node:fs, node:http, node:https, node:net, ws, undici) and use no clock, randomness, environment, fetch or console; no market-data source, test or fixture names a URL scheme or a Binance host",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/market-data/validator.property.spec.ts",
+      "milestone": "S1",
+      "covers": "fast-check, 500 runs each: every row lands in one bucket and nothing throws for mixed valid, mutated, duplicated and arbitrary rows; candles and missing partition the expected slots; output order and range; permutation invariance; no look-ahead in outlier verdicts and no unclosed bar in candles or checked; round 2: a flat run followed by normal bars never flags a bar whose median is zero, and after a lasting change in range at most floor(window / 2) + 1 bars are flagged; live and replay split with history agree (D13); freshness rules and monotonicity; deep-equal results under TZ UTC, Europe/Ljubljana and Pacific/Chatham",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/market-data/validator.spec.ts",
+      "milestone": "S1",
+      "covers": "validateKlines over the fixture; duplicates (identical, ms against µs, 18th-digit conflict quarantines both and leaves the slot missing, a malformed row sharing a slot); order (reverse input, outOfOrder count); outside_range, future_bar precedence, open bars; missing (metrics gap 00:35 to 01:25 through missingRanges, empty batch, leading and trailing gaps, slots stop at asOfMs); outliers (spike, level shift, a rise in volatility flagging at most half a window plus one, unjudged without history, none unjudged with history, the ratio, gap and median rules pinned at the boundary); round 2: after a run of zero-range bars a zero median leaves bars unjudged, not flagged (the reviewers' probe of 10 flat then 10 normal bars, window 8, multiple 10, accepts slots 10 to 13), a spike right after a flat run is accepted and unjudged, a spike once the median is non-zero is flagged, and a zero-median bar still fails OHLC checks; round 3: zero ratios left in the window bias the median low (10 flat, 4 tight, then normal bars, window 8, multiple 10: slot 14 is an outlier at median 0.0005 and threshold 0.005, while the control with tight bars in place of the flat run flags nothing); every argument error throws naming the argument; row content never throws; freshness boundary cases",
+      "status": "passing"
+    },
+    {
       "file": "local-trading-agent-backend/test/unit/shared/correlation.spec.ts",
       "milestone": "S0",
       "covers": "correlation scopes across await, concurrency, generated UUIDs, no ID outside a scope, on the loggerOptions factory",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/shared/decimal.spec.ts",
+      "milestone": "S1",
+      "covers": "parseNonNegativeDecimal reads 0, 0.00000000, 60000.01000000 and 1.000000000000000001 exactly and rejects signs, exponents, whitespace, leading zeros, a bare point, empty, NaN, Infinity, JS numbers, null, undefined and objects; property: toFixed() of any generated decimal string up to 30 significant digits is its canonical form; the Decimal clone is not the global constructor",
       "status": "passing"
     },
     {
@@ -207,7 +237,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/tooling/repo-files.spec.ts",
       "milestone": "S0",
-      "covers": ".env.example has the three schema keys with a blank DATABASE_IDENTITY and unchanged URL and mode lines, ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0a to S0e done, S0 complete, S1a next, the S0e current state and setup steps, hand-offs to S7a, S7b, S11a and S12, three keys, @isaacs/nonrecursive-glob-match in the Dependencies settlement) and tests.json at the repo root; the identity setup is limited to a database's first run, and a mismatch marker is never copied into .env (round 2); S0f: the dependencies.spec.ts entry text names verifyDepsBeforeRun, and Current state names sqlstate, jsonb and precision; S0g: S0g done, S0a to S0g merged in Next, and the Database section names config --images and the run-time --pull never choice, not --pull missing",
+      "covers": ".env.example has the three schema keys with a blank DATABASE_IDENTITY and unchanged URL and mode lines, ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0a to S0e done, S0 complete, the S0e current state and setup steps, hand-offs to S7a, S7b, S11a and S12, three keys, @isaacs/nonrecursive-glob-match in the Dependencies settlement) and tests.json at the repo root; the identity setup is limited to a database's first run, and a mismatch marker is never copied into .env (round 2); S0f: the dependencies.spec.ts entry text names verifyDepsBeforeRun, and Current state names sqlstate, jsonb and precision; S0g: S0g done, S0a to S0g merged in Next, and the Database section names config --images and the run-time --pull never choice, not --pull missing; S1a: S1a done, S1b next, a Market data subsection in Current state naming normalizer.ts, validator.ts, D12 and freshness, a Market data settlement naming S1b and S10b, and decimal.js in the Dependencies settlement",
       "status": "passing"
     },
     {
