@@ -174,7 +174,7 @@
       "id": "008-normalizer",
       "title": "S1a Normalizer and validator",
       "branch": "factory/008-normalizer",
-      "stage": "needs-human",
+      "stage": "merged",
       "round": 3,
       "maxRounds": 3,
       "rounds": [
@@ -206,9 +206,9 @@
       ],
       "gate": "PASS",
       "needsHuman": false,
-      "reason": "[human] criterion 31 (real-file smoke check) not run or waived; confirm the spike-after-flat-run choice",
+      "reason": "",
       "builder": "a540adbb706ed3eb2",
-      "updatedAt": "2026-11-16T17:24:29Z"
+      "updatedAt": "2026-11-23T14:29:29Z"
     }
   ]
 }
