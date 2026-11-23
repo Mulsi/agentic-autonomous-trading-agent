@@ -209,6 +209,29 @@
       "reason": "",
       "builder": "a540adbb706ed3eb2",
       "updatedAt": "2026-11-23T14:29:29Z"
+    },
+    {
+      "id": "009-bulk-loader",
+      "title": "S1b Bulk history loader",
+      "branch": "factory/009-bulk-loader",
+      "stage": "needs-human",
+      "round": 1,
+      "maxRounds": 2,
+      "rounds": [
+        {
+          "reviews": {
+            "security": "PASS",
+            "risk": "PASS",
+            "quant": "PASS",
+            "code": "PASS"
+          }
+        }
+      ],
+      "gate": "PASS",
+      "needsHuman": true,
+      "reason": "protected migration 0004, [human] criterion 34 (real-file check awaiting download approval), seven open decisions and four spec deviations",
+      "builder": "a0087254fe7c20641",
+      "updatedAt": "2026-11-23T18:51:14Z"
     }
   ]
 }

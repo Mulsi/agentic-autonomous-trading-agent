@@ -22,6 +22,7 @@ Items follow `SLICE_1_PLAN.md` §5 in dependency order. The larger milestones ar
 ## S2 Features
 - [ ] S2a Indicators: EMA, SMA, ATR, RSI, MACD, ROC, ADX, Bollinger width, RVOL, VWAP, plus the look-ahead guard test.
 - [ ] S2b Structure: swings, HH/HL/LH/LL, BOS/CHoCH, ranges.
+- [ ] S1b2 Derivatives bulk files (S1b scope split): `data.binance.vision` funding, premium-index and metrics files, their row schemas and tables, through the S1b loader and checks. Metrics rows with off-grid times are quarantined, never silently dropped by `missingRanges` (S1a review). Adds a migration, so it needs a human.
 - [ ] S2c Flow, derivatives and breadth features.
 
 ## S3 to S6 Decision pipeline
