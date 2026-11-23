@@ -19,6 +19,18 @@
       "status": "passing"
     },
     {
+      "file": "local-trading-agent-backend/test/db/backfill.db-spec.ts",
+      "milestone": "S1",
+      "covers": "BackfillModule on a migrated throwaway database with HTTP_GET replaced by the fake: DATABASE_IDENTITY unset or wrong writes no row, makes no request, logs the UNKNOWN identity line and exits 1; the stored marker writes the fixture day and logs VERIFIED and the file summary; the dry run with DATABASE_URL on a closed port succeeds without opening a context",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/db/candle-store.db-spec.ts",
+      "milestone": "S1",
+      "covers": "the Drizzle candle sink on throwaway databases: 96 candles round-trip with Decimal-equal money strings, exact _ms numbers under TZ UTC and Europe/Ljubljana, bigint trade_count, is_closed and source; hostile raw lines stored byte-equal and candles intact; a second load changes nothing (rows, ingested_at, quarantined_at, one asset) with inserted 0 and alreadyStored 96; a 2,976-row monthly file in one transaction; an 18th-digit close conflict quarantines stored_conflict and keeps the stored row; outlier_checked stays false after a later run judges the bar; a forced quarantine failure rolls back every row (store_error); reason bogus and timeframe 5m fail with 23514",
+      "status": "passing"
+    },
+    {
       "file": "local-trading-agent-backend/test/db/client.db-spec.ts",
       "milestone": "S0",
       "covers": "connectDatabase reads the single marker of a migrated database and no table on an unmigrated one, the session runs in UTC, and a closed application context leaves no connection in pg_stat_activity; a marker read blocked by ACCESS EXCLUSIVE on database_identity fails within the read timeout and leaves no session (round 2)",
@@ -39,13 +51,13 @@
     {
       "file": "local-trading-agent-backend/test/db/migrate.db-spec.ts",
       "milestone": "S0",
-      "covers": "pnpm db:migrate on a throwaway database: one migration row per journal entry, nothing outside drizzle but the marker table with its row and array types and primary-key index, idempotent, cleanup on failure, non-zero exits without leaking the password",
+      "covers": "pnpm db:migrate on a throwaway database: one migration row per journal entry, nothing outside drizzle but the marker table with its row and array types and primary-key index, idempotent, cleanup on failure, non-zero exits without leaking the password; S1b: the inventory after all migrations is exactly the marker and market-data tables with their row and array types, primary-key indexes and the assets unique index",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/db/research-role.db-spec.ts",
       "milestone": "S0",
-      "covers": "research_reader: login only with no other attribute and no membership, a second database migrates with the role present; with the documented password inside BEGIN READ WRITE it reads the marker, and every write, CREATE, ALTER, DROP, TRUNCATE, CREATE ROLE and CREATE DATABASE fails with 42501; a table trader creates later is readable and not writable",
+      "covers": "research_reader: login only with no other attribute and no membership, a second database migrates with the role present; with the documented password inside BEGIN READ WRITE it reads the marker, and every write, CREATE, ALTER, DROP, TRUNCATE, CREATE ROLE and CREATE DATABASE fails with 42501; a table trader creates later is readable and not writable; S1b: research_reader can SELECT from assets, candles and market_data_quarantine, and INSERT into each fails with 42501",
       "status": "passing"
     },
     {
@@ -141,7 +153,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/db/drizzle.spec.ts",
       "milestone": "S0",
-      "covers": "drizzle dependencies and config; schema.ts declares only the marker table; migrations: journal matches the .sql files with snapshots, 0000_init unchanged, only the marker table is created, roles and grants name only research_reader, inserts only into the marker table, nothing dropped, truncated, deleted or updated; db scripts; only src/db/client.ts connects, no setTypeParser; the app never writes the marker",
+      "covers": "drizzle dependencies and config; schema.ts declares only the marker table; migrations: journal matches the .sql files with snapshots, 0000_init unchanged, only the marker table is created, roles and grants name only research_reader, inserts only into the marker table, nothing dropped, truncated, deleted or updated; db scripts; only src/db/client.ts connects, no setTypeParser; the app never writes the marker; S1b: schema.ts declares exactly database_identity, assets, candles and market_data_quarantine; the migrations create exactly those four tables (0001 and 0004); the DELETE/UPDATE ban strips only ON DELETE/UPDATE NO ACTION, and ON DELETE CASCADE, SET NULL and a bare DELETE FROM still fail it; .insert( only in src/market-data/candle-store.ts, which never names the marker table",
       "status": "passing"
     },
     {
@@ -169,6 +181,12 @@
       "status": "passing"
     },
     {
+      "file": "local-trading-agent-backend/test/unit/db/market-data-migration.spec.ts",
+      "milestone": "S1",
+      "covers": "migrations after 0003 use now() only as DEFAULT now() on timestamp(0-3) with time zone columns and have no trigger or function; no non-spec source outside the migrations contains now(); the reason CHECK list equals STORED_QUARANTINE_REASONS and the timeframe CHECK list equals the KlineInterval values",
+      "status": "passing"
+    },
+    {
       "file": "local-trading-agent-backend/test/unit/db/migrate-env.spec.ts",
       "milestone": "S0",
       "covers": "pnpm db:migrate ignores a .env in its working directory",
@@ -177,13 +195,49 @@
     {
       "file": "local-trading-agent-backend/test/unit/db/schema-scan.spec.ts",
       "milestone": "S0",
-      "covers": "column conventions: the real schema passes the metadata and source scans; fixture tables with real, doublePrecision, numeric in number or bigint mode, number-mode bigint outside *_ms, timestamp without time zone and customType each fail naming table and column; string numeric, timestamptz and bigint *_ms pass; S0f: the metadata layer is an allow-list, so json, jsonb, number-mode bigserial, integer types on *_ms, real, numeric, integer, timestamptz and nested arrays each fail with one violation (and in the source layer), date, interval and point fail naming their columnType, a stubbed unknown columnType fails closed, every named type exists in the installed drizzle-orm; integers, bigint-mode int8, text-like, enum and their arrays pass; a server-filled timestamptz needs precision 0 to 3 (defaultNow, precision 6 and sql`now()` fail; precision 3 and 0, no default and $defaultFn pass); the one exemption is pinned, the real schema fails without it, and a stale exemption is a violation",
+      "covers": "column conventions: the real schema passes the metadata and source scans; fixture tables with real, doublePrecision, numeric in number or bigint mode, number-mode bigint outside *_ms, timestamp without time zone and customType each fail naming table and column; string numeric, timestamptz and bigint *_ms pass; S0f: the metadata layer is an allow-list, so json, jsonb, number-mode bigserial, integer types on *_ms, real, numeric, integer, timestamptz and nested arrays each fail with one violation (and in the source layer), date, interval and point fail naming their columnType, a stubbed unknown columnType fails closed, every named type exists in the installed drizzle-orm; integers, bigint-mode int8, text-like, enum and their arrays pass; a server-filled timestamptz needs precision 0 to 3 (defaultNow, precision 6 and sql`now()` fail; precision 3 and 0, no default and $defaultFn pass); the one exemption is pinned, the real schema fails without it, and a stale exemption is a violation; S1b: the real schema scans exactly database_identity, assets, candles and market_data_quarantine and passes with the unchanged single exemption",
       "status": "passing"
     },
     {
       "file": "local-trading-agent-backend/test/unit/db/suites.spec.ts",
       "milestone": "S0",
       "covers": "DB specs live under test/, only pnpm test:db collects them",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/market-data/backfill-args.spec.ts",
+      "milestone": "S1",
+      "covers": "the backfill flags: the full set parses in any order; each missing flag, an unknown, repeated or valueless flag, bad windows (0, 1.5, -1, 01) and bad multiples (0.99, 0, -1, 1e3, NaN, Infinity, 0.99999999999999999999) exit 2 naming the flag with no HttpGet constructed and no context opened; multiples 1 and 1000 are accepted; an unclosed --to exits 2 before any request; no default for either outlier flag in backfill-args.ts",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/market-data/backfill-entry.spec.ts",
+      "milestone": "S1",
+      "covers": "scripts.backfill is node --env-file=../.env dist/backfill.js; the dependency and devDependency name lists are unchanged; BackfillModule imports ConfigModule, LoggerModule, DbModule and MarketDataModule and builds its logger as AppModule does; backfill.ts runs only as the entry point and its dry-run branch boots nothing",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/market-data/binance-vision.spec.ts",
+      "milestone": "S1",
+      "covers": "bulk file names, URLs from the origin constant and UTC ranges (daily, monthly, leap February, year end) under TZ UTC, Europe/Ljubljana and Pacific/Chatham; every invalid symbol, interval, period, date and from > to throws naming the argument; parseChecksum accepts one or two spaces and rejects upper case, wrong length, other or path names, extra lines, empty and over-size bodies; a 500-run property that zipUrl has exactly the expected path segments with no .., % or empty segment",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/market-data/bulk-csv.spec.ts",
+      "milestone": "S1",
+      "covers": "splitBulkCsv over the 8-row fixture (12 fields, no header, µs timeUnits); the exact header is skipped, a changed, CR-terminated, upper-case or BOM header and a later header line are data rows quarantined at their index; bad_encoding, nul_byte, line_too_long at 1025 bytes (1024 accepted, bytes not characters) and too_many_rows at 2 × slots + 2 (2 × slots + 1 accepted); an empty middle line is a row and one trailing newline is not",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/market-data/bulk-loader.property.spec.ts",
+      "milestone": "S1",
+      "covers": "history chaining: the second file's history is the first file's checked, a failed middle file leaves the third with the first's checked, and short files keep window + 1 earlier bars; a 200-run property that a chained multi-day run accepts, flags and leaves unjudged exactly the bars one validateKlines call over the whole range does (D13)",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/market-data/bulk-loader.spec.ts",
+      "milestone": "S1",
+      "covers": "loadKlines with a fake HttpGet and a recording sink: the 96-row µs day loads with two GETs (CHECKSUM first); the provisional outlier echo and five unjudged bars stored unchecked; checksum_mismatch, a CHECKSUM 404, unparseable or failed CHECKSUMs, an over-size zip and a rejected archive never open, parse or store (spied reader, splitter and hash); only closed periods are requested; every row lands in one bucket with its own index and text, identical lines told apart by identity, and missing slots exact; hostile raw text is stored for the sink but never reaches a log line or a summary, nor does a sink error message; run() exits 1 with a not_found file after processing all three, 0 when all load, a dry run never opens the context and needs no environment, and an UNKNOWN identity writes and requests nothing",
       "status": "passing"
     },
     {
@@ -195,7 +249,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/market-data/purity.spec.ts",
       "milestone": "S1",
-      "covers": "text scan: normalizer.ts, validator.ts and shared/decimal.ts import only decimal.js, zod and src/shared or src/market-data modules (no Nest, Drizzle, pg, pino, src/db, src/config, node:fs, node:http, node:https, node:net, ws, undici) and use no clock, randomness, environment, fetch or console; no market-data source, test or fixture names a URL scheme or a Binance host",
+      "covers": "text scan: normalizer.ts, validator.ts and shared/decimal.ts import only decimal.js, zod and src/shared or src/market-data modules (no Nest, Drizzle, pg, pino, src/db, src/config, node:fs, node:http, node:https, node:net, ws, undici) and use no clock, randomness, environment, fetch or console; no market-data source, test or fixture names a URL scheme or a Binance host; S1b: binance-vision.ts and bulk-csv.ts are pure too; the endpoint scan allows only the one origin constant in binance-vision.ts, exactly once, and no other src file names the host",
       "status": "passing"
     },
     {
@@ -207,7 +261,19 @@
     {
       "file": "local-trading-agent-backend/test/unit/market-data/validator.spec.ts",
       "milestone": "S1",
-      "covers": "validateKlines over the fixture; duplicates (identical, ms against µs, 18th-digit conflict quarantines both and leaves the slot missing, a malformed row sharing a slot); order (reverse input, outOfOrder count); outside_range, future_bar precedence, open bars; missing (metrics gap 00:35 to 01:25 through missingRanges, empty batch, leading and trailing gaps, slots stop at asOfMs); outliers (spike, level shift, a rise in volatility flagging at most half a window plus one, unjudged without history, none unjudged with history, the ratio, gap and median rules pinned at the boundary); round 2: after a run of zero-range bars a zero median leaves bars unjudged, not flagged (the reviewers' probe of 10 flat then 10 normal bars, window 8, multiple 10, accepts slots 10 to 13), a spike right after a flat run is accepted and unjudged, a spike once the median is non-zero is flagged, and a zero-median bar still fails OHLC checks; round 3: zero ratios left in the window bias the median low (10 flat, 4 tight, then normal bars, window 8, multiple 10: slot 14 is an outlier at median 0.0005 and threshold 0.005, while the control with tight bars in place of the flat run flags nothing); every argument error throws naming the argument; row content never throws; freshness boundary cases",
+      "covers": "validateKlines over the fixture; duplicates (identical, ms against µs, 18th-digit conflict quarantines both and leaves the slot missing, a malformed row sharing a slot); order (reverse input, outOfOrder count); outside_range, future_bar precedence, open bars; missing (metrics gap 00:35 to 01:25 through missingRanges, empty batch, leading and trailing gaps, slots stop at asOfMs); outliers (spike, level shift, a rise in volatility flagging at most half a window plus one, unjudged without history, none unjudged with history, the ratio, gap and median rules pinned at the boundary); round 2: after a run of zero-range bars a zero median leaves bars unjudged, not flagged (the reviewers' probe of 10 flat then 10 normal bars, window 8, multiple 10, accepts slots 10 to 13), a spike right after a flat run is accepted and unjudged, a spike once the median is non-zero is flagged, and a zero-median bar still fails OHLC checks; round 3: zero ratios left in the window bias the median low (10 flat, 4 tight, then normal bars, window 8, multiple 10: slot 14 is an outlier at median 0.0005 and threshold 0.005, while the control with tight bars in place of the flat run flags nothing); every argument error throws naming the argument; row content never throws; freshness boundary cases; S1b: a bar whose predecessor lies two missing slots back is judged against that older close (window 2, multiple 5): flagged above the computed threshold, accepted below it",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/market-data/zip-entry.spec.ts",
+      "milestone": "S1",
+      "covers": "readSingleEntry returns the exact bytes for deflate, stored and data-descriptor archives, and rejects with a named reason and no throw: two or zero entries, path, NUL, drive and other names, local name mismatch, directory entries, encryption, bzip2, ZIP64 extra, sizes and locator, declared size over the cap, a zip bomb, CRC and size mismatches, corrupt deflate, truncated buffers, an out-of-bounds end record, duplicate end records and 0 bytes; 500-run properties over arbitrary bytes, one flipped byte and generated archives never throw or exceed maxBytes; zip-entry.ts imports only node:zlib, node:buffer and relative modules, and no market-data or shared source names node:fs, writeFile, createWriteStream, mkdtemp or extract",
+      "status": "passing"
+    },
+    {
+      "file": "local-trading-agent-backend/test/unit/shared/bounded-fetch.spec.ts",
+      "milestone": "S1",
+      "covers": "boundedGet against a loopback server: a body of exactly maxBytes, a Content-Length of maxBytes + 1 refused before the body is sent, a chunked body past maxBytes cut off, 301 and 302 give redirect without requesting the target, a silent server times out within the limit, a 404 comes back with an empty body, a closed port is network, only GETs; fetch( appears only in bounded-fetch.ts; the production HttpGet refuses URLs outside the spot bulk-data path, traversal, escapes, queries and look-alike hosts without calling fetch",
       "status": "passing"
     },
     {
@@ -237,7 +303,7 @@
     {
       "file": "local-trading-agent-backend/test/unit/tooling/repo-files.spec.ts",
       "milestone": "S0",
-      "covers": ".env.example has the three schema keys with a blank DATABASE_IDENTITY and unchanged URL and mode lines, ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0a to S0e done, S0 complete, the S0e current state and setup steps, hand-offs to S7a, S7b, S11a and S12, three keys, @isaacs/nonrecursive-glob-match in the Dependencies settlement) and tests.json at the repo root; the identity setup is limited to a database's first run, and a mismatch marker is never copied into .env (round 2); S0f: the dependencies.spec.ts entry text names verifyDepsBeforeRun, and Current state names sqlstate, jsonb and precision; S0g: S0g done, S0a to S0g merged in Next, and the Database section names config --images and the run-time --pull never choice, not --pull missing; S1a: S1a done, S1b next, a Market data subsection in Current state naming normalizer.ts, validator.ts, D12 and freshness, a Market data settlement naming S1b and S10b, and decimal.js in the Dependencies settlement",
+      "covers": ".env.example has the three schema keys with a blank DATABASE_IDENTITY and unchanged URL and mode lines, ANTHROPIC_API_KEY gone outside the logging key paths, progress.md (S0a to S0e done, S0 complete, the S0e current state and setup steps, hand-offs to S7a, S7b, S11a and S12, three keys, @isaacs/nonrecursive-glob-match in the Dependencies settlement) and tests.json at the repo root; the identity setup is limited to a database's first run, and a mismatch marker is never copied into .env (round 2); S0f: the dependencies.spec.ts entry text names verifyDepsBeforeRun, and Current state names sqlstate, jsonb and precision; S0g: S0g done, S0a to S0g merged in Next, and the Database section names config --images and the run-time --pull never choice, not --pull missing; S1a: S1a done, S1b next, a Market data subsection in Current state naming normalizer.ts, validator.ts, D12 and freshness, a Market data settlement naming S1b and S10b, and decimal.js in the Dependencies settlement; S1b: S1b done, S1c next, Current state Market data names bulk-loader.ts, CHECKSUM and market_data_quarantine, the Market data settlement names S1c and S2c, and the root .gitignore lists *.zip and *.CHECKSUM",
       "status": "passing"
     },
     {

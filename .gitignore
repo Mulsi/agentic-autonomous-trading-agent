@@ -5,3 +5,7 @@
 
 # Factory build checkouts, one per job
 .worktrees/
+
+# Bulk-data archives downloaded by hand (S1b). The loader itself writes no file.
+*.zip
+*.CHECKSUM

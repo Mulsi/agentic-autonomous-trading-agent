@@ -1,0 +1,350 @@
+{
+  "id": "81fda6f6-535b-4e34-8a94-6ca8fe934742",
+  "prevId": "93deb844-ac52-4549-a78a-9449b478a268",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.assets": {
+      "name": "assets",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "exchange": {
+          "name": "exchange",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "market_type": {
+          "name": "market_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "base_asset": {
+          "name": "base_asset",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quote_asset": {
+          "name": "quote_asset",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "assets_exchange_market_type_symbol": {
+          "name": "assets_exchange_market_type_symbol",
+          "nullsNotDistinct": false,
+          "columns": [
+            "exchange",
+            "market_type",
+            "symbol"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.candles": {
+      "name": "candles",
+      "schema": "",
+      "columns": {
+        "asset_id": {
+          "name": "asset_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timeframe": {
+          "name": "timeframe",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "open_time_ms": {
+          "name": "open_time_ms",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "close_time_ms": {
+          "name": "close_time_ms",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "open": {
+          "name": "open",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "high": {
+          "name": "high",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "low": {
+          "name": "low",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "close": {
+          "name": "close",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "volume": {
+          "name": "volume",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quote_volume": {
+          "name": "quote_volume",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "taker_buy_base_volume": {
+          "name": "taker_buy_base_volume",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "taker_buy_quote_volume": {
+          "name": "taker_buy_quote_volume",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trade_count": {
+          "name": "trade_count",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_closed": {
+          "name": "is_closed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outlier_checked": {
+          "name": "outlier_checked",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ingested_at": {
+          "name": "ingested_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "candles_asset_id_assets_id_fk": {
+          "name": "candles_asset_id_assets_id_fk",
+          "tableFrom": "candles",
+          "tableTo": "assets",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "candles_pkey": {
+          "name": "candles_pkey",
+          "columns": [
+            "asset_id",
+            "timeframe",
+            "open_time_ms"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "candles_timeframe": {
+          "name": "candles_timeframe",
+          "value": "\"candles\".\"timeframe\" in ('15m', '1h', '4h', '1d')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.database_identity": {
+      "name": "database_identity",
+      "schema": "",
+      "columns": {
+        "singleton": {
+          "name": "singleton",
+          "type": "boolean",
+          "primaryKey": true,
+          "notNull": true,
+          "default": true
+        },
+        "marker": {
+          "name": "marker",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "database_identity_singleton": {
+          "name": "database_identity_singleton",
+          "value": "\"database_identity\".\"singleton\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.market_data_quarantine": {
+      "name": "market_data_quarantine",
+      "schema": "",
+      "columns": {
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_file": {
+          "name": "source_file",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_index": {
+          "name": "row_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timeframe": {
+          "name": "timeframe",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "open_time_ms": {
+          "name": "open_time_ms",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw": {
+          "name": "raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quarantined_at": {
+          "name": "quarantined_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "market_data_quarantine_pkey": {
+          "name": "market_data_quarantine_pkey",
+          "columns": [
+            "source_file",
+            "row_index",
+            "reason"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "market_data_quarantine_reason": {
+          "name": "market_data_quarantine_reason",
+          "value": "\"market_data_quarantine\".\"reason\" in ('malformed_row', 'bad_timestamp', 'timestamp_unit_mismatch', 'misaligned_open_time', 'bad_close_time', 'bad_number', 'non_positive_price', 'ohlc_inconsistent', 'volume_inconsistent', 'future_bar', 'outside_range', 'duplicate_conflict', 'outlier', 'stored_conflict')"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

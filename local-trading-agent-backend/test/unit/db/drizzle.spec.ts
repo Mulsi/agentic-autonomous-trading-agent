@@ -88,10 +88,23 @@ describe('src/db/schema.ts', () => {
     expect(schema).toMatch(/^\/\/ .*milestone.*\n?.*§7/m);
   });
 
-  it('declares exactly one table, the identity marker', () => {
-    expect(schema.match(/\bpgTable\(/g)).toHaveLength(1);
-    expect(schema).toMatch(/pgTable\(\s*'database_identity'/);
-    expect(Object.keys(schemaModule)).toEqual(['databaseIdentity']);
+  // S1b: the marker table plus the three market-data tables, exactly.
+  it('declares exactly four tables: the identity marker and the S1b market data', () => {
+    expect(schema.match(/\bpgTable\(/g)).toHaveLength(4);
+    expect(
+      [...schema.matchAll(/pgTable\(\s*'(\w+)'/g)].map((match) => match[1]),
+    ).toEqual([
+      'database_identity',
+      'assets',
+      'candles',
+      'market_data_quarantine',
+    ]);
+    expect(Object.keys(schemaModule)).toEqual([
+      'databaseIdentity',
+      'assets',
+      'candles',
+      'marketDataQuarantine',
+    ]);
   });
 
   it.each([
@@ -186,11 +199,15 @@ describe('src/db/migrations', () => {
     );
   });
 
-  it('creates only the marker table', () => {
+  // S1b: the exact list, the marker table first.
+  it('creates only the marker table and the S1b market-data tables', () => {
     expect(across(/\bCREATE\s+TABLE\s+"?(\w+)"?/gi)).toEqual([
       ['0001_database_identity.sql', 'database_identity'],
+      ['0004_market_data.sql', 'assets'],
+      ['0004_market_data.sql', 'candles'],
+      ['0004_market_data.sql', 'market_data_quarantine'],
     ]);
-    expect(allSql.match(/\bCREATE\s+TABLE\b/gi)).toHaveLength(1);
+    expect(allSql.match(/\bCREATE\s+TABLE\b/gi)).toHaveLength(4);
   });
 
   it('names only research_reader in CREATE ROLE and ALTER ROLE', () => {
@@ -238,12 +255,36 @@ describe('src/db/migrations', () => {
     );
   });
 
+  // S1b: drizzle-kit writes `ON DELETE no action ON UPDATE no action` for a
+  // foreign key. Only those two referential clauses are stripped first.
+  const withoutNoAction = (text: string): string =>
+    text.replace(/\bON\s+(?:DELETE|UPDATE)\s+NO\s+ACTION\b/gi, '');
+
   it.each(['DROP', 'TRUNCATE', 'DELETE', 'UPDATE'])(
     'no migration contains %s',
     (keyword) => {
-      expect(allSql).not.toMatch(new RegExp(`\\b${keyword}\\b`, 'i'));
+      expect(withoutNoAction(allSql)).not.toMatch(
+        new RegExp(`\\b${keyword}\\b`, 'i'),
+      );
     },
   );
+
+  it.each([
+    'ON DELETE CASCADE',
+    'ON DELETE SET NULL',
+    'on update cascade',
+    'DELETE FROM "candles";',
+    'UPDATE "candles" SET "close" = 1;',
+    'ON DELETE NO ACTION; DELETE FROM "assets";',
+  ])('the DELETE/UPDATE ban still catches %s', (text) => {
+    expect(withoutNoAction(text)).toMatch(/\b(?:DELETE|UPDATE)\b/i);
+  });
+
+  it('strips only the no-action clauses', () => {
+    expect(withoutNoAction('x ON DELETE no action ON UPDATE NO ACTION y')).toBe(
+      'x   y',
+    );
+  });
 });
 
 describe('database scripts', () => {
@@ -361,7 +402,18 @@ describe('the app never writes the marker (S0e)', () => {
     expect(offenders).toEqual([]);
   });
 
-  it.each(['.insert(', '.update(', '.delete('])(
+  // S1b: the candle store is the one writer, and only for .insert(.
+  const CANDLE_STORE = 'src/market-data/candle-store.ts';
+
+  it('no non-spec source outside the migrations but candle-store.ts contains .insert(', () => {
+    const offenders = sources
+      .filter(({ text }) => text.includes('.insert('))
+      .map(({ path }) => path);
+
+    expect(offenders).toEqual([CANDLE_STORE]);
+  });
+
+  it.each(['.update(', '.delete('])(
     'no non-spec source outside the migrations contains %s',
     (needle) => {
       const offenders = sources
@@ -371,6 +423,13 @@ describe('the app never writes the marker (S0e)', () => {
       expect(offenders).toEqual([]);
     },
   );
+
+  it('candle-store.ts never names the identity marker table', () => {
+    const store = readAppFile(CANDLE_STORE);
+
+    expect(store).not.toContain('databaseIdentity');
+    expect(store).not.toContain('database_identity');
+  });
 
   it.each([
     'INSERT',

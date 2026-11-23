@@ -43,9 +43,13 @@ import {
 describe('the real schema follows the column conventions', () => {
   const tables = tablesIn(schema);
 
+  // S1b: the exact list, in export order.
   it('scans every table exported from src/db/schema.ts', () => {
     expect(tables.map((table) => getTableConfig(table).name)).toEqual([
       'database_identity',
+      'assets',
+      'candles',
+      'market_data_quarantine',
     ]);
   });
 

@@ -11,6 +11,7 @@ import {
   validateKlines,
   type ValidateKlinesOptions,
 } from '../../../src/market-data/validator.js';
+import { Decimal } from '../../../src/shared/decimal.js';
 import {
   ANCHOR_MS,
   bulkCsvRows,
@@ -911,5 +912,89 @@ describe('freshness (criterion 22, pinned cases)', () => {
     expect(
       freshnessBlocksEntries({ status: 'UNKNOWN', reason: 'clock_skew' }),
     ).toBe(true);
+  });
+});
+
+describe('a bar after a gap (S1b criterion 24)', () => {
+  // S1b keeps the S1a rule: a bar whose predecessor in the series lies across
+  // missing slots is judged against that older close. The expected values are
+  // computed here; validator.ts is unchanged.
+  const WINDOW = 2;
+  const MULTIPLE = 5;
+  const before = [
+    ['100', '100', '100', '100'],
+    ['100', '101', '99', '100'], // true range 2 against 100
+    ['100', '100.5', '99.5', '100'], // 1 against 100
+    ['100', '101.5', '98.5', '100'], // 3 against 100
+  ] as const;
+  /** Slots 4 and 5 are missing; the bar under test sits at slot 6. */
+  const GAP_SLOT = 6;
+
+  function trueRange(
+    [, high, low]: readonly string[],
+    previousClose: string,
+  ): Decimal {
+    const close = new Decimal(previousClose);
+    return Decimal.max(new Decimal(high as string), close)
+      .minus(Decimal.min(new Decimal(low as string), close))
+      .div(close);
+  }
+
+  function judgeAfterGap(bar: readonly [string, string, string, string]) {
+    const rows = [
+      ...before.map(([open, high, low, close], i) =>
+        msRow(slot(i), STEP, { open, high, low, close }),
+      ),
+      msRow(slot(GAP_SLOT), STEP, {
+        open: bar[0],
+        high: bar[1],
+        low: bar[2],
+        close: bar[3],
+      }),
+    ];
+    const batch = validateKlines(
+      rows,
+      options({
+        range: { fromMs: slot(0), toMs: slot(GAP_SLOT + 1) },
+        asOfMs: slot(GAP_SLOT + 1),
+        outlier: { window: WINDOW, maxRangeMultiple: MULTIPLE },
+      }),
+    );
+    // The reference: the median of the two ratios before the bar, in the
+    // series S (slots 2 and 3), and the bar's ratio against slot 3's close.
+    const ratios = [trueRange(before[2], '100'), trueRange(before[3], '100')];
+    const median = (ratios[0] as Decimal).plus(ratios[1] as Decimal).div(2);
+    const ratio = trueRange(bar, before[3][3]);
+    const flagged = batch.quarantined.some(
+      (record) =>
+        record.reason === 'outlier' && record.openTimeMs === slot(GAP_SLOT),
+    );
+    return {
+      flagged,
+      unjudged: batch.unjudged.includes(slot(GAP_SLOT)),
+      expectedFlag: ratio.gt(median.times(MULTIPLE)),
+      missing: batch.missing,
+    };
+  }
+
+  it('flags the bar when its true range against the older close passes the threshold', () => {
+    // Median 0.02, threshold 0.10: a bar at 111 is 11 away from slot 3's close.
+    const result = judgeAfterGap(['111', '111', '111', '111']);
+
+    expect(result.expectedFlag).toBe(true);
+    expect(result.flagged).toBe(true);
+    expect(result.unjudged).toBe(false);
+    expect(result.missing).toEqual([
+      { fromMs: slot(4), toMs: slot(GAP_SLOT + 1) },
+    ]);
+  });
+
+  it('accepts the bar when its true range against the older close stays under it', () => {
+    const result = judgeAfterGap(['109', '109', '109', '109']);
+
+    expect(result.expectedFlag).toBe(false);
+    expect(result.flagged).toBe(false);
+    expect(result.unjudged).toBe(false);
+    expect(result.missing).toEqual([{ fromMs: slot(4), toMs: slot(GAP_SLOT) }]);
   });
 });

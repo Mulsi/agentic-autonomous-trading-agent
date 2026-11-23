@@ -8,6 +8,8 @@ const PURE_FILES = [
   'src/market-data/normalizer.ts',
   'src/market-data/validator.ts',
   'src/shared/decimal.ts',
+  'src/market-data/binance-vision.ts',
+  'src/market-data/bulk-csv.ts',
 ];
 
 /** Every module specifier in `import ... from`, `export ... from`, `import()` and `require()`. */
@@ -138,9 +140,35 @@ describe('no live endpoints (criterion 26)', () => {
     );
   });
 
+  // S1b criterion 30: one exception, the origin constant in binance-vision.ts.
+  const VISION = 'src/market-data/binance-vision.ts';
+  const ORIGIN = ['https', '://data.', 'binance', '.vision'].join('');
+
+  /** The file's text, lower case, with the one allowed origin taken out. */
+  const scanned = (path: string): string => {
+    const text = readAppFile(path).toLowerCase();
+    return path === VISION ? text.replace(ORIGIN, '') : text;
+  };
+
   it.each(needles)('no file contains %s', (needle) => {
-    const offenders = files.filter((path) =>
-      readAppFile(path).toLowerCase().includes(needle),
+    const offenders = files.filter((path) => scanned(path).includes(needle));
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('binance-vision.ts holds the origin exactly once, and no other URL', () => {
+    const text = readAppFile(VISION);
+
+    expect(text.split(ORIGIN)).toHaveLength(2);
+    expect(text).toContain(`BINANCE_VISION_ORIGIN = '${ORIGIN}'`);
+    expect(text.replace(ORIGIN, '')).not.toMatch(/[a-z][a-z0-9+.-]*:\/\//i);
+  });
+
+  it('no other file under src/ names the bulk-data host', () => {
+    const host = ['binance', '.vision'].join('');
+    const offenders = listAppFiles('src').filter(
+      (path) =>
+        path !== VISION && readAppFile(path).toLowerCase().includes(host),
     );
 
     expect(offenders).toEqual([]);
