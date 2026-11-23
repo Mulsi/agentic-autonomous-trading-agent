@@ -1,8 +1,21 @@
 import { sql } from 'drizzle-orm';
-import { boolean, check, pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  boolean,
+  check,
+  integer,
+  numeric,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 // Trading tables arrive with the milestone that first uses them (SLICE_1_PLAN
-// §7). This file holds only the database identity marker (src/db/identity.ts).
+// §7). This file holds the database identity marker (src/db/identity.ts) and,
+// since S1b, the market data the bulk loader stores.
 //
 // Column conventions, enforced by test/unit/db/schema-scan.spec.ts. The scan is
 // an allow-list: a column type not named here fails it.
@@ -11,7 +24,8 @@ import { boolean, check, pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
 // - time is `timestamp` with `withTimezone: true`, or epoch milliseconds in a
 //   number-mode `bigint` whose SQL name ends in `_ms`
 // - a `timestamptz` the server fills (`.defaultNow()`, `.default(...)`) declares
-//   `precision` 0 to 3: `now()` stores microseconds and JS keeps milliseconds,
+//   `precision` 0 to 3: the server clock stores microseconds and JS keeps
+//   milliseconds,
 //   so `=` on a value read back would miss the row (D12). One pinned
 //   exemption: `database_identity.created_at`, which nothing reads
 // - `integer`, `smallint`, `serial` and `smallserial` hold counts and ids only,
@@ -36,4 +50,111 @@ export const databaseIdentity = pgTable(
       .defaultNow(),
   },
   (table) => [check('database_identity_singleton', sql`${table.singleton}`)],
+);
+
+/**
+ * A tradable instrument: a subset of master §4. `status`, `cmc_rank`,
+ * `sector` and `updated_at` arrive with S1c and W5. The bulk loader inserts
+ * `('binance', 'spot', symbol, base, 'USDT')` when it is absent.
+ */
+export const assets = pgTable(
+  'assets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    exchange: text('exchange').notNull(),
+    marketType: text('market_type').notNull(),
+    symbol: text('symbol').notNull(),
+    baseAsset: text('base_asset').notNull(),
+    quoteAsset: text('quote_asset').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, precision: 3 })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('assets_exchange_market_type_symbol').on(
+      table.exchange,
+      table.marketType,
+      table.symbol,
+    ),
+  ],
+);
+
+/**
+ * Closed klines: master §4 plus §7. Times are epoch ms (`_ms`), money is exact
+ * `numeric` read as a string, and a stored row is never changed. A bar the
+ * outlier rule could not judge is stored with `outlier_checked = false`.
+ */
+export const candles = pgTable(
+  'candles',
+  {
+    assetId: uuid('asset_id')
+      .notNull()
+      .references(() => assets.id),
+    timeframe: text('timeframe').notNull(),
+    openTimeMs: bigint('open_time_ms', { mode: 'number' }).notNull(),
+    closeTimeMs: bigint('close_time_ms', { mode: 'number' }).notNull(),
+    open: numeric('open').notNull(),
+    high: numeric('high').notNull(),
+    low: numeric('low').notNull(),
+    close: numeric('close').notNull(),
+    volume: numeric('volume').notNull(),
+    quoteVolume: numeric('quote_volume').notNull(),
+    takerBuyBaseVolume: numeric('taker_buy_base_volume').notNull(),
+    takerBuyQuoteVolume: numeric('taker_buy_quote_volume').notNull(),
+    tradeCount: bigint('trade_count', { mode: 'bigint' }).notNull(),
+    isClosed: boolean('is_closed').notNull(),
+    outlierChecked: boolean('outlier_checked').notNull(),
+    source: text('source').notNull(),
+    ingestedAt: timestamp('ingested_at', { withTimezone: true, precision: 3 })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'candles_pkey',
+      columns: [table.assetId, table.timeframe, table.openTimeMs],
+    }),
+    // The KlineInterval values (src/market-data/normalizer.ts).
+    check(
+      'candles_timeframe',
+      sql`${table.timeframe} in ('15m', '1h', '4h', '1d')`,
+    ),
+  ],
+);
+
+/**
+ * Rows kept out of `candles`, append-only. `raw` is the original CSV line,
+ * stored as data through bound parameters and never logged (Rule 11).
+ */
+export const marketDataQuarantine = pgTable(
+  'market_data_quarantine',
+  {
+    source: text('source').notNull(),
+    sourceFile: text('source_file').notNull(),
+    rowIndex: integer('row_index').notNull(),
+    symbol: text('symbol').notNull(),
+    timeframe: text('timeframe').notNull(),
+    reason: text('reason').notNull(),
+    openTimeMs: bigint('open_time_ms', { mode: 'number' }),
+    raw: text('raw').notNull(),
+    quarantinedAt: timestamp('quarantined_at', {
+      withTimezone: true,
+      precision: 3,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'market_data_quarantine_pkey',
+      columns: [table.sourceFile, table.rowIndex, table.reason],
+    }),
+    // STORED_QUARANTINE_REASONS (src/market-data/quarantine-reasons.ts). The
+    // schema imports only Drizzle, so the list is written out; a unit test
+    // compares the migration with the constant.
+    check(
+      'market_data_quarantine_reason',
+      sql`${table.reason} in ('malformed_row', 'bad_timestamp', 'timestamp_unit_mismatch', 'misaligned_open_time', 'bad_close_time', 'bad_number', 'non_positive_price', 'ohlc_inconsistent', 'volume_inconsistent', 'future_bar', 'outside_range', 'duplicate_conflict', 'outlier', 'stored_conflict')`,
+    ),
+  ],
 );

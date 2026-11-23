@@ -28,14 +28,32 @@ const JOURNAL_ENTRIES = z
   .entries.length;
 
 /**
- * The marker table and what Postgres makes for it: its row type, its array
- * type and the primary-key index. Nothing else outside `drizzle`.
+ * Everything outside `drizzle` after all migrations: the marker table and the
+ * S1b market-data tables, with what Postgres makes for each (row type, array
+ * type, primary-key index, and the unique index on `assets`). Nothing else.
  */
-const MARKER_OBJECTS = [
+const MIGRATED_OBJECTS = [
+  { schema: 'public', name: '_assets', kind: 'type' },
+  { schema: 'public', name: '_candles', kind: 'type' },
   { schema: 'public', name: '_database_identity', kind: 'type' },
+  { schema: 'public', name: '_market_data_quarantine', kind: 'type' },
+  { schema: 'public', name: 'assets', kind: 'relation r' },
+  { schema: 'public', name: 'assets', kind: 'type' },
+  {
+    schema: 'public',
+    name: 'assets_exchange_market_type_symbol',
+    kind: 'relation i',
+  },
+  { schema: 'public', name: 'assets_pkey', kind: 'relation i' },
+  { schema: 'public', name: 'candles', kind: 'relation r' },
+  { schema: 'public', name: 'candles', kind: 'type' },
+  { schema: 'public', name: 'candles_pkey', kind: 'relation i' },
   { schema: 'public', name: 'database_identity', kind: 'relation r' },
   { schema: 'public', name: 'database_identity', kind: 'type' },
   { schema: 'public', name: 'database_identity_pkey', kind: 'relation i' },
+  { schema: 'public', name: 'market_data_quarantine', kind: 'relation r' },
+  { schema: 'public', name: 'market_data_quarantine', kind: 'type' },
+  { schema: 'public', name: 'market_data_quarantine_pkey', kind: 'relation i' },
 ];
 
 let admin: Client;
@@ -107,8 +125,8 @@ describe('pnpm db:migrate on a throwaway database', () => {
     expect(await migrationRows(database)).toHaveLength(JOURNAL_ENTRIES);
   });
 
-  it('creates nothing outside drizzle but the marker table and what Postgres makes for it', async () => {
-    expect(await userObjects(database, ['drizzle'])).toEqual(MARKER_OBJECTS);
+  it('creates nothing outside drizzle but the marker and market-data tables and what Postgres makes for them', async () => {
+    expect(await userObjects(database, ['drizzle'])).toEqual(MIGRATED_OBJECTS);
   });
 
   it("the inventory does see drizzle's own table", async () => {

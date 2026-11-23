@@ -29,6 +29,13 @@
       "when": 1794332036867,
       "tag": "0003_research_reader",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795450335192,
+      "tag": "0004_market_data",
+      "breakpoints": true
     }
   ]
 }

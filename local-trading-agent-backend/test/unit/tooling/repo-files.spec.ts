@@ -124,8 +124,8 @@ describe('progress.md', () => {
     expect(database).not.toContain('--pull missing');
   });
 
-  it('says S0 is complete and names S1b as next', () => {
-    expect(next).toMatch(/^- S1b /m);
+  it('says S0 is complete and names S1c as next', () => {
+    expect(next).toMatch(/^- S1c /m);
     expect(next).toContain('S0 is complete');
     expect(next).not.toMatch(/^- S0/m);
   });
@@ -168,6 +168,37 @@ describe('progress.md', () => {
       );
 
       expect(settlement).toContain('`decimal.js`');
+    });
+  });
+
+  describe('S1b', () => {
+    it('marks S1b done', () => {
+      expect(progress).toMatch(/^- \[x\] S1b /m);
+    });
+
+    it('describes the bulk loader in Current state', () => {
+      const marketData = subsection(
+        section(progress, 'Current state'),
+        'Market data',
+      );
+
+      for (const needle of [
+        '`bulk-loader.ts`',
+        'CHECKSUM',
+        '`market_data_quarantine`',
+      ]) {
+        expect(marketData).toContain(needle);
+      }
+    });
+
+    it('hands the market data settlement on to S1c and S2c', () => {
+      const settlement = subsection(
+        section(progress, 'Settlements'),
+        'Market data',
+      );
+
+      expect(settlement).toContain('S1c');
+      expect(settlement).toContain('S2c');
     });
   });
 
@@ -307,6 +338,15 @@ describe('progress.md', () => {
   it('records the linter settlement', () => {
     expect(progress).toContain('typescript-eslint');
     expect(progress).toContain('oxlint');
+  });
+});
+
+describe('the root .gitignore (S1b)', () => {
+  it('keeps hand-downloaded archives and CHECKSUM files out of git', () => {
+    const lines = readRepoFile('.gitignore').split('\n');
+
+    expect(lines).toContain('*.zip');
+    expect(lines).toContain('*.CHECKSUM');
   });
 });
 

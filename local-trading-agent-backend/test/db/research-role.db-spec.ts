@@ -203,6 +203,34 @@ describe('connected as research_reader with its documented password', () => {
     expect(await attempt(client, sql)).toBe(INSUFFICIENT_PRIVILEGE);
   });
 
+  // S1b criterion 26: the market-data tables, through the default privileges
+  // from migration 0003, with no new grant.
+  it.each(['assets', 'candles', 'market_data_quarantine'])(
+    'can read %s',
+    async (table) => {
+      expect(await attempt(client, `SELECT * FROM ${table} LIMIT 1`)).toBe(
+        undefined,
+      );
+    },
+  );
+
+  it.each([
+    [
+      'assets',
+      "INSERT INTO assets (exchange, market_type, symbol, base_asset, quote_asset) VALUES ('binance', 'spot', 'BTCUSDT', 'BTC', 'USDT')",
+    ],
+    [
+      'candles',
+      "INSERT INTO candles (asset_id, timeframe, open_time_ms, close_time_ms, open, high, low, close, volume, quote_volume, taker_buy_base_volume, taker_buy_quote_volume, trade_count, is_closed, outlier_checked, source) VALUES (gen_random_uuid(), '15m', 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, true, true, 'x')",
+    ],
+    [
+      'market_data_quarantine',
+      "INSERT INTO market_data_quarantine (source, source_file, row_index, symbol, timeframe, reason, raw) VALUES ('x', 'x', 0, 'BTCUSDT', '15m', 'outlier', 'x')",
+    ],
+  ])('INSERT into %s fails with 42501', async (_, sql) => {
+    expect(await attempt(client, sql)).toBe(INSUFFICIENT_PRIVILEGE);
+  });
+
   it('CREATE DATABASE fails with 42501', async () => {
     // CREATE DATABASE cannot run inside a transaction block at all, so it runs
     // on its own, with the read-only default turned off for the session.

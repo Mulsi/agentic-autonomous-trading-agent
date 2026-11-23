@@ -11,6 +11,7 @@
   },
   "scripts": {
     "build": "pnpm typecheck && nest build",
+    "backfill": "node --env-file=../.env dist/backfill.js",
     "db:generate": "DOTENV_CONFIG_PATH=/dev/null drizzle-kit generate",
     "db:migrate": "DOTENV_CONFIG_PATH=/dev/null drizzle-kit migrate",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
