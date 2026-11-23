@@ -214,7 +214,7 @@
       "id": "009-bulk-loader",
       "title": "S1b Bulk history loader",
       "branch": "factory/009-bulk-loader",
-      "stage": "needs-human",
+      "stage": "merged",
       "round": 1,
       "maxRounds": 2,
       "rounds": [
@@ -228,10 +228,10 @@
         }
       ],
       "gate": "PASS",
-      "needsHuman": true,
-      "reason": "protected migration 0004, [human] criterion 34 (real-file check awaiting download approval), seven open decisions and four spec deviations",
+      "needsHuman": false,
+      "reason": "",
       "builder": "a0087254fe7c20641",
-      "updatedAt": "2026-11-23T18:51:14Z"
+      "updatedAt": "2026-11-23T19:22:00Z"
     }
   ]
 }

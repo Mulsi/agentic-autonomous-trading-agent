@@ -372,6 +372,7 @@ The suites are `unit` (`pnpm test`, which the gate runs: no network, database or
     - Over three consecutive daily fixture files, the second file's `history` is exactly the first file's `checked`.
     - **Property** (≥ 200 runs): for generated multi-day series, the accepted set, the outlier set and the unjudged set across the run equal those of one `validateKlines` call over the whole range.
     - When the middle file fails (`checksum_mismatch`), the third file's `history` is the first file's `checked`, and the run still processes the third file.
+    - *Amended at human approval (2026-11-23):* as built and accepted by every reviewer, each file's `history` is the run's accumulated `checked`, trimmed to `max(window + 1, last file's checked length)`. For a 15m day with a window under 96 this equals the previous file's `checked`. For short files (4h or 1d daily), a window near 96, or a file whose rows were all quarantined, the literal "previous file's `checked`" rule would make chained runs disagree with one batch over the whole range (D13).
 19. **Raw content stays out of logs and summaries.** Rows whose raw text contains these strings are quarantined:
     - `'); DROP TABLE candles; --`
     - `%s %j`

@@ -15,18 +15,18 @@ Items follow `SLICE_1_PLAN.md` §5 in dependency order. The larger milestones ar
 
 ## S1 Market data
 - [x] S1a Normalizer and validator: ms and µs timestamps (D12), duplicates, ordering, gaps, staleness, OHLC sanity, outliers, quarantine.
-- [ ] S1b Bulk history loader from `data.binance.vision` with CHECKSUM verification. Required criterion carried from S1a (criterion 31): run the normalizer over the real BTCUSDT 15m spot file for 2026-10-01 after CHECKSUM verification and expect 96 accepted candles in µs, nothing quarantined or missing. The production outlier multiple must be at least 1 (S1a review). The other S1a hand-offs are in `progress.md` under Settlements › Market data. From here on, any `timestamptz` the server fills, whether by a Drizzle default or by `now()` in raw SQL (INSERT, UPDATE or trigger), is declared `timestamptz(3)`; the S0f schema scan sees only Drizzle defaults (S0f review).
+- [x] S1b Bulk history loader from `data.binance.vision` with CHECKSUM verification. Required criterion carried from S1a (criterion 31): run the normalizer over the real BTCUSDT 15m spot file for 2026-10-01 after CHECKSUM verification and expect 96 accepted candles in µs, nothing quarantined or missing. The production outlier multiple must be at least 1 (S1a review). The other S1a hand-offs are in `progress.md` under Settlements › Market data. From here on, any `timestamptz` the server fills, whether by a Drizzle default or by `now()` in raw SQL (INSERT, UPDATE or trigger), is declared `timestamptz(3)`; the S0f schema scan sees only Drizzle defaults (S0f review).
 - [ ] S1c Read-only REST adapters, rate-limit aware.
 - [ ] S1d WebSocket workers: reconnect, rotation, resubscribe, gap backfill.
 
 ## S2 Features
 - [ ] S2a Indicators: EMA, SMA, ATR, RSI, MACD, ROC, ADX, Bollinger width, RVOL, VWAP, plus the look-ahead guard test.
 - [ ] S2b Structure: swings, HH/HL/LH/LL, BOS/CHoCH, ranges.
-- [ ] S1b2 Derivatives bulk files (S1b scope split): `data.binance.vision` funding, premium-index and metrics files, their row schemas and tables, through the S1b loader and checks. Metrics rows with off-grid times are quarantined, never silently dropped by `missingRanges` (S1a review). Adds a migration, so it needs a human.
+- [ ] S1b2 Derivatives bulk files (S1b scope split): `data.binance.vision` funding, premium-index and metrics files, their row schemas and tables, through the S1b loader and checks. Also from the S1b reviews: add the archive SHA-256 to `market_data_quarantine` rows so a republished file's changed lines are kept; a test that a zip timeout makes no retry (`http.urls()` is exactly CHECKSUM then zip); wrap `context.close()` in `backfill.ts` so a close error keeps the exit code; replace the `as` casts at `bulk-loader.ts` (sink) and `zip-entry.ts` (error code). Metrics rows with off-grid times are quarantined, never silently dropped by `missingRanges` (S1a review). Adds a migration, so it needs a human.
 - [ ] S2c Flow, derivatives and breadth features.
 
 ## S3 to S6 Decision pipeline
-- [ ] S3 Regime: market and asset regime, UNKNOWN blocks entries. Bars in the S1a validator's `unjudged` list are not verified entry input; test that such a bar cannot be the only support for an entry signal (S1a review).
+- [ ] S3 Regime: market and asset regime, UNKNOWN blocks entries. A stored candle is unverified, and blocks entries, when `outlier_checked = false` or when `market_data_quarantine` holds a row for the same symbol, interval and open time (S1b review). Bars in the S1a validator's `unjudged` list are not verified entry input; test that such a bar cannot be the only support for an entry signal (S1a review).
 - [ ] Gate paths, a human change and not a factory job; the orchestrator stops here and asks (S0a review): add the planned entry gate, exit and EV code (`src/signals/gate.ts`, `src/positions/exits.ts`, `src/stats/ev.ts`, or their folders) to `PROTECTED` in `factory/gate.sh`, and decide whether the gate also runs `pnpm test:e2e` and `pnpm test:db`. `test:db` must run in the gate before S7b, or the 48-entry counter's database proofs never gate a merge (S0b review). Also consider tripwires for `@anthropic-ai/sdk`, `--dangerously-skip-permissions` and `bypassPermissions` in non-test code (D9).
 - [ ] S4 Signal engine: registry, the §6 catalogue, the D5 gate, veto flags.
 - [ ] S5 `trend_continuation` strategy and scanner with dedupe.
@@ -34,7 +34,7 @@ Items follow `SLICE_1_PLAN.md` §5 in dependency order. The larger milestones ar
 - [ ] S6b `strategy_stats` table and EV computed by code, with the D14 window filter and the unfiltered numbers alongside. Aggregate queries over money columns run through Drizzle or cast to text: a raw-pool `numeric[]` (for example `array_agg(price)`) or `jsonb` result comes back as JS numbers whatever the column types are (S0f review).
 
 ## S7 and S8 Risk and execution (always needs a human)
-- [ ] S7a `RISK_POLICY.yaml`, its loader, the hard checks, and `risk_events` audit. The risk engine re-checks that no entry rests only on `unjudged` bars, with a test (S1a review).
+- [ ] S7a `RISK_POLICY.yaml`, its loader, the hard checks, and `risk_events` audit. The risk engine re-checks that no entry rests only on `unjudged` or unverified stored candles (`outlier_checked = false`, or a quarantine row for the same slot), with a test (S1a and S1b reviews).
 - [ ] S7b 48-entry rolling counter and kill switch. The risk-approval transaction re-reads `database_identity.marker` in the same snapshot as the counter and the kill switch, and a missing or wrong marker rejects the entry (S0e review).
 - [ ] S8a `ExchangeAdapter` interface and the order state machine.
 - [ ] S8b Paper broker, resident stops and targets, ledger reconciliation, UNKNOWN recovery.
